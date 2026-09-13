@@ -24,6 +24,7 @@ async function start(): Promise<void> {
       button.classList.toggle("active", active);
       button.setAttribute("aria-pressed", String(active));
     });
+    libraryView.setVisible(name === "library");
     window.scrollTo({ top: 0, behavior: "instant" });
   }
   function showToast(message: string): void {
@@ -92,6 +93,8 @@ async function start(): Promise<void> {
     if (name === "library") libraryView.resetDetail();
     showView(name);
   }));
+  window.addEventListener("pagehide", event => { if (!event.persisted) libraryView.destroy(); else libraryView.setVisible(false); });
+  window.addEventListener("pageshow", () => libraryView.setVisible(!document.querySelector<HTMLElement>('[data-view="library"]')!.hidden));
   registerSW({
     onOfflineReady() { showToast("Comic Reader is ready to use offline."); },
     onNeedRefresh() { showToast("An update is ready. Reopen the app to apply it."); },

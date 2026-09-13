@@ -1,3 +1,4 @@
+import { initializeCoverView } from "./cover-view";
 import type { ReadingData } from "../storage/reading-data";
 import type { ReadingProgress } from "../storage/reading-progress";
 import type { ReadingAnchor } from "../storage/bookmarks";
@@ -15,7 +16,7 @@ export function initializeLibraryView(
   openChapter: (series: ComicSeries, chapter: ComicChapter, position?: ReadingAnchor) => void,
   data: ReadingData,
   notify: (message: string) => void,
-): { resolveChapter: (seriesId: string, chapterId: string) => { series: ComicSeries; chapter: ComicChapter } | null; subscribeScan: (listener: () => void) => void; updateConnection: (connection: LibraryConnection) => void; resetDetail: () => void; returnToSeries: (series: ComicSeries, chapter: ComicChapter) => void } {
+): { setVisible: (visible: boolean) => void; destroy: () => void; resolveChapter: (seriesId: string, chapterId: string) => { series: ComicSeries; chapter: ComicChapter } | null; subscribeScan: (listener: () => void) => void; updateConnection: (connection: LibraryConnection) => void; resetDetail: () => void; returnToSeries: (series: ComicSeries, chapter: ComicChapter) => void } {
   const grid = document.querySelector<HTMLDivElement>("#comic-grid")!;
   const samples = Array.from(grid.querySelectorAll<HTMLButtonElement>(".comic-card"));
   const search = document.querySelector<HTMLInputElement>("#library-search")!;
@@ -43,11 +44,14 @@ export function initializeLibraryView(
   let detailSeries: ComicSeries | null = null;
   let continuation: { series: ComicSeries; chapter: ComicChapter; record: ReadingProgress } | null = null;
   let returnCard: HTMLButtonElement | null = null;
+  let viewVisible = true;
+  const covers = initializeCoverView(notify);
 
   function resetDetail(restoreFocus = false): void {
     const wasOpen = !detail.hidden;
     detail.hidden = true;
     overview.hidden = false;
+    covers.setVisible(viewVisible);
     detailSeries = null;
     chapterList.replaceChildren();
     detailTitle.textContent = "";
@@ -60,6 +64,7 @@ export function initializeLibraryView(
     detailSeries = series;
     returnCard = card;
     overview.hidden = true;
+    covers.setVisible(false);
     detail.hidden = false;
     detailTitle.textContent = series.name;
     detailCount.textContent = count(series.chapters.length, "chapter");
@@ -94,10 +99,11 @@ export function initializeLibraryView(
     detailTitle.focus();
   }
 
-  function realCard(series: ComicSeries): HTMLButtonElement {
-    const card = document.createElement("button");
-    card.type = "button";
-    card.className = "comic-card";
+  function realCard(series: ComicSeries): HTMLElement {
+    const card = document.createElement("article");
+    card.className = "comic-card real-comic-card";
+    const open = document.createElement("button"); open.type = "button"; open.className = "series-open";
+    open.setAttribute("aria-label", `Open series: ${series.name}`);
     card.dataset.seriesId = series.id;
     const cover = document.createElement("span");
     // Deterministic palette selection, independent of scan order.
@@ -113,8 +119,12 @@ export function initializeLibraryView(
     const chapters = document.createElement("span");
     chapters.textContent = count(series.chapters.length, "chapter");
     const progress = document.createElement("span"); progress.className = "series-progress";
-    card.append(cover, title, chapters, progress);
-    card.addEventListener("click", () => openSeries(series, card));
+    open.append(cover, title, chapters, progress);
+    const coverStatus = document.createElement("span"); coverStatus.className = "cover-status";
+    const retry = document.createElement("button"); retry.type = "button"; retry.className = "cover-retry button button-secondary";
+    retry.textContent = "Retry cover"; retry.setAttribute("aria-label", `Retry cover: ${series.name}`); retry.hidden = true;
+    card.append(open, coverStatus, retry);
+    open.addEventListener("click", () => openSeries(series, open));
     return card;
   }
 
@@ -134,7 +144,9 @@ export function initializeLibraryView(
         : naturalCompare(a.name, b.name));
       const filtered = series.filter(item => item.name.toLocaleLowerCase().includes(query));
       visible = filtered.length;
+      covers.bind([], grid);
       grid.replaceChildren(...filtered.map(realCard));
+      covers.bind(filtered, grid);
     } else {
       const sorted = [...samples].sort((a, b) => sort.value === "chapters"
         ? Number(b.dataset.chapters) - Number(a.dataset.chapters) || naturalCompare(a.dataset.title ?? "", b.dataset.title ?? "")
@@ -142,6 +154,7 @@ export function initializeLibraryView(
       sorted.forEach(card => card.hidden = !(card.dataset.title ?? "").toLocaleLowerCase().includes(query));
       total = samples.length;
       visible = sorted.filter(card => !card.hidden).length;
+      covers.bind([], grid);
       grid.replaceChildren(...sorted);
     }
     visibleCount.textContent = query ? `${visible} of ${total} series` : `${total} series`;
@@ -211,6 +224,7 @@ export function initializeLibraryView(
     abort = null;
     scanning = false;
     result = null;
+    covers.reset(root);
     const detailWasOpen = !detail.hidden;
     resetDetail();
     if (detailWasOpen && !document.querySelector<HTMLElement>('[data-view="library"]')!.hidden) search.focus();
@@ -236,6 +250,7 @@ export function initializeLibraryView(
       await checkFolderAvailable(currentRoot);
       if (!current()) return;
       result = scanned;
+      if (!scanned.inaccessibleFolders.length) void covers.prune(scanned.series);
       const warning = scanned.inaccessibleFolders.length
         ? ` Partial scan: ${count(scanned.inaccessibleFolders.length, "folder")} could not be read. Rescan to retry.` : "";
       status.textContent = scanned.series.length
@@ -261,6 +276,7 @@ export function initializeLibraryView(
     if (nextRoot !== root || (nextRoot && next.revision !== revision)) {
       cancelScan();
       root = nextRoot;
+      covers.reset(root);
       revision = next.revision;
       renderLibrary();
       if (root) void scan();
@@ -298,10 +314,13 @@ export function initializeLibraryView(
   sort.addEventListener("change", renderLibrary);
   document.querySelector("#back-to-library")!.addEventListener("click", () => resetDetail(true));
   rescanButtons.forEach(button => button.addEventListener("click", () => { if (!connection.busy) void scan(); }));
+  document.querySelector("#clear-covers-button")!.addEventListener("covers-cleared", renderLibrary);
   renderLibrary();
   updateButtons();
   return {
     updateConnection,
+    setVisible(value) { viewVisible = value; covers.setVisible(value && Boolean(detail.hidden)); },
+    destroy: covers.destroy,
     subscribeScan: listener => { scanListeners.add(listener); },
     resolveChapter(seriesId, chapterId) {
       if (!root || !result || scanning) return null;
@@ -312,6 +331,7 @@ export function initializeLibraryView(
     returnToSeries(series, chapter): void {
       if (!result?.series.includes(series)) { resetDetail(); search.focus(); return; }
       overview.hidden = true;
+      covers.setVisible(false);
       detail.hidden = false;
       const button = Array.from(chapterList.querySelectorAll<HTMLButtonElement>("button"))
         .find(item => item.dataset.chapterId === chapter.id);

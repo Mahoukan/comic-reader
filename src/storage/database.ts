@@ -13,9 +13,9 @@ export function openDatabase(): Promise<IDBDatabase> {
       reject(error);
     }
     try {
-      const request = indexedDB.open(DATABASE, 3);
+      const request = indexedDB.open(DATABASE, 4);
       request.onupgradeneeded = () => {
-        for (const name of [STORE, "progress", "preferences", "bookmarks", "readStatuses"]) {
+        for (const name of [STORE, "progress", "preferences", "bookmarks", "readStatuses", "covers"]) {
           if (!request.result.objectStoreNames.contains(name)) request.result.createObjectStore(name);
         }
       };

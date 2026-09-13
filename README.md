@@ -11,7 +11,7 @@ npm install
 npm run dev
 ```
 
-Open the local address shown in the terminal. Milestone 6B is complete: bookmarks, manual read states, and local JSON backup/restore are available. Milestone 6A added: the vertical reader remembers page positions, offers real Continue Reading, derives chapter/series reading states, and saves supported reader preferences. The library supports natural sorting, search, chapter counts, and series detail lists.
+Open the local address shown in the terminal. Milestone 7 is complete: real series covers are generated and cached locally. Bookmarks, manual read states, and local JSON backup/restore remain available. Milestone 6A added: the vertical reader remembers page positions, offers real Continue Reading, derives chapter/series reading states, and saves supported reader preferences. The library supports natural sorting, search, chapter counts, and series detail lists.
 
 Choose a folder using the header or Library/Settings controls. Its directory handle is saved in native IndexedDB on this device. On launch, the app queries read permission without prompting. If permission needs renewal, click **Reconnect folder**. **Change folder** opens a new picker; **Disconnect folder** confirms before removing the saved connection, without changing local files.
 
@@ -37,11 +37,11 @@ Only immediate subfolders containing direct `.cbz` files become series. Extensio
 
 Scanning runs after selection, restoration with granted permission, reconnection, or **Rescan**. Inaccessible series folders are skipped with a partial-scan warning; failed scans can be retried. Changing or disconnecting folders cancels the previous scan and clears its results. Repeated Rescan clicks cannot start concurrent scans.
 
-Scanning enumerates handles only: it does not read CBZ bytes, inspect ZIP entries, generate real covers, or open chapters. Covers are deterministic placeholders. Scan results remain in memory; the selected root handle, reading progress, and reader preferences are stored in IndexedDB, and the library is rebuilt on connection. If IndexedDB fails, the current folder still works for the session. With no connected folder, sample comics are shown as previews.
+Scanning enumerates handles only: it does not read CBZ bytes, inspect ZIP entries, generate real covers, or open chapters. Real covers load lazily after scanning; deterministic initials remain while loading or if generation fails. Scan results remain in memory; the selected root handle, reading metadata, reader preferences, and disposable cover thumbnails are stored in IndexedDB, and the library is rebuilt on connection. If IndexedDB fails, the current folder still works for the session. With no connected folder, sample comics are shown as previews.
 
 ## Reading CBZ chapters
 
-The reader uses `@zip.js/zip.js` (the native-codec build) to process a small chapter window, entirely inside the browser. Selecting a chapter starts a fresh reading session at that chapter. ZIP directories are inspected first; image bytes are extracted sequentially only when page placeholders approach the viewport, using IntersectionObserver and one shared session queue. No archives or images are uploaded or persisted in IndexedDB or the service-worker cache. Only the progress metadata described below is saved locally.
+The reader uses `@zip.js/zip.js` (the native-codec build) to process a small chapter window, entirely inside the browser. Selecting a chapter starts a fresh reading session at that chapter. ZIP directories are inspected first; image bytes are extracted sequentially only when page placeholders approach the viewport, using IntersectionObserver and one shared session queue. No archives or full source pages are uploaded or persisted in IndexedDB or the service-worker cache. Reading metadata and small disposable cover thumbnails are saved locally in separate stores.
 
 Supported page extensions are JPG, JPEG, PNG, WebP, GIF, and AVIF, case-insensitively. The browser must support decoding the image format. Images may be nested inside the archive and use the existing natural filename sorting, including their internal folder names. Directory entries, macOS metadata, named thumbnail folders/files, unsupported formats (including SVG), symbolic links, and absolute or traversal paths are ignored. Encrypted archives and compression formats other than stored/deflate are unsupported. Native deflate decompression requires a current compatible browser.
 
@@ -138,7 +138,37 @@ Import **replaces**, rather than merges, progress, bookmarks, and manual statuse
 - Cancel import, then test a different library name and its additional confirmation. Import during pending reader work and verify old callbacks cannot overwrite or scroll the restored session.
 - Test unavailable IndexedDB, mobile four-item navigation, keyboard Space/Tab/Escape, independent chapter actions, dialog focus, no uncaught exceptions, and revoked image/download URLs.
 
-Milestone 6B is complete. The next milestone is real cover extraction and library visual polish.
+Milestone 6B is complete. Milestone 7 adds the local cover cache described below.
+
+## Locally generated series covers (Milestone 7)
+
+Database version **4** adds the `covers` store without changing folder handles, progress, preferences, bookmarks, or read overrides. Cover records contain the library/series names and IDs, first chapter ID and filename, source file size and last-modified timestamp, thumbnail MIME type/dimensions, thumbnail Blob, and update timestamp. Thumbnails are disposable cache data: **reading-data JSON backups/imports and Clear reading data exclude them**.
+
+A series cover always comes from the **first naturally sorted supported raster image in its first naturally sorted chapter**. Generation reuses the CBZ reader's filtering, natural sorting, CRC checks, bounded extraction, and archive limits. It extracts only that page. Supported source formats are JPG/JPEG, PNG, WebP, GIF, and AVIF where the browser can decode them. GIF uses its first decoded frame; SVG is unsupported. A corrupt, inaccessible, or image-free first chapter leaves initials and **Retry cover**, rather than searching other chapters. Titles, chapter counts, and reading states remain usable independently of cover loading.
+
+Generation decodes locally with `createImageBitmap`, or an image-element fallback, and creates an uncropped, aspect-preserving thumbnail inside **480 by 640 pixels**, without upscaling small images. Decoded sources must have positive dimensions, at most **16,384 pixels per dimension** and **40 million pixels**. Canvas output prefers **WebP at quality 0.82**, falling back to JPEG or PNG, with positive dimensions and a non-empty Blob at most **1 MiB**. Archives, decoded bitmaps, canvases, and temporary source URLs are released after each job. The card uses a fixed 3:4 cover slot and `object-fit: cover` for display, so landscape source thumbnails remain uncropped in storage while their card presentation may crop.
+
+IntersectionObserver requests covers only for cards approaching the viewport, with a **600px preload margin**. Hidden search results and preview cards do not request covers. There is **one shared cover job at a time**, with duplicate series requests suppressed and queued visible cards preferred over more distant cards. A viewport-check fallback supports browsers without IntersectionObserver. Sorting/searching rebind cards safely; leaving the library grid releases its cover URLs. Scrolling outside the preload area releases each card's URL. A **24-thumbnail LRU** bounds in-memory fallback storage rather than retaining every series Blob.
+
+Cached thumbnails are shown after their source fingerprint has been confirmed. Each scan's first use validates the current chapter with `getFile()`; a matching cache avoids opening or extracting the CBZ. The same immutable File snapshot supplies both fingerprint and generation. Later card renders in that scan can reuse already validated thumbnails. The fingerprint includes chapter ID, filename, size, and last-modified time. Changed fingerprints or malformed cached records regenerate that series cover; rescanning alone does not regenerate a matching cover. Changes that preserve all fingerprint fields are not detected. Cache namespaces use root folder name and series ID, retaining the same-name root limitation described for reading data.
+
+Only a complete successful scan removes cached covers for missing series in the active library. Partial and failed scans retain cache records. Cleanup never changes reading metadata. Generation tokens, cancellation, and ordered cache writes discard results from previous scans/libraries and prevent stale writes after clearing. Cancelling a pending source-file request does not hold up the next library's cover queue; already running native decode work finishes cleanup before another cover job starts.
+
+Settings **Clear cached covers** clears only the connected library's thumbnails, cancels current cover work, revokes URLs, and returns cards to initials. They regenerate automatically as cards approach the viewport. Progress, bookmarks, statuses, preferences, the folder connection, and source comics stay unchanged. If IndexedDB fails, cover generation still works with the bounded session cache; a Settings explanation states that covers may regenerate after reload.
+
+Extraction, decoding, resizing, and caching remain entirely on the device. There are no external cover requests, metadata APIs, or new network requests. Comic files remain read-only. Full source pages and thumbnails never enter service-worker caches, and only IndexedDB stores thumbnails persistently. PWA paths remain `/comic-reader/`.
+
+### Milestone 7 manual checklist
+
+- Check portrait, landscape, narrow, small, and large permitted first pages; try JPG/PNG/WebP/GIF/AVIF and invalid/no-image first chapters.
+- Reload/rescan to check cached reuse, then change the first chapter's size or modification time or add an earlier-sorting chapter to check regeneration.
+- Search, sort, and scroll through many series during loading; confirm placeholders remain usable and only nearby covers load.
+- Repair a failed source and use keyboard Retry cover; open a series before its cover finishes.
+- Change/disconnect folders or clear cached covers during a job; confirm no stale images, writes, leaked URLs, or open archives.
+- Remove a series and fully rescan; verify partial/failed scans retain inaccessible-series covers. Test a malformed cached record.
+- Test unavailable IndexedDB, mobile width, keyboard focus, reduced motion, and existing progress/bookmarks/read states/backup operations.
+
+Milestone 7 is complete. The next milestone is additional reading modes and final application polish.
 
 ## Production build
 
@@ -168,4 +198,5 @@ If you rename the repository, update `base`, `start_url`, and `scope` in `vite.c
 5. Seamless chapter transitions
 6A. Reading progress and preferences (complete)
 6B. Bookmarks, manual read states, and data export/import (complete)
-7. Real cover extraction and library visual polish (next)
+7. Real cover extraction and library visual polish (complete)
+8. Additional reading modes and final application polish (next)
