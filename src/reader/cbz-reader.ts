@@ -46,7 +46,13 @@ export async function openChapter(handle: FileSystemFileHandle, signal: AbortSig
 
   try {
     controller.signal.throwIfAborted();
-    const file = await handle.getFile();
+    // Native getFile cannot be aborted; stop waiting so rapid chapter changes
+    // can finish cleanup without letting its late result open an old archive.
+    const file = await new Promise<File>((resolve, reject) => {
+      const aborted = (): void => reject(controller.signal.reason ?? new DOMException("Chapter closed", "AbortError"));
+      controller.signal.addEventListener("abort", aborted, { once: true });
+      void handle.getFile().then(resolve, reject).finally(() => controller.signal.removeEventListener("abort", aborted));
+    });
     controller.signal.throwIfAborted();
     // Bundled ZIP code uses browser-native codecs; no worker or external WASM downloads.
     reader = new ZipReader(new BlobReader(file), {

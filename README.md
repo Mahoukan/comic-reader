@@ -11,7 +11,7 @@ npm install
 npm run dev
 ```
 
-Open the local address shown in the terminal. Milestone 7 is complete: real series covers are generated and cached locally. Bookmarks, manual read states, and local JSON backup/restore remain available. Milestone 6A added: the vertical reader remembers page positions, offers real Continue Reading, derives chapter/series reading states, and saves supported reader preferences. The library supports natural sorting, search, chapter counts, and series detail lists.
+Open the local address shown in the terminal. Milestone 8 is complete: the continuous-scroll reader has fullscreen, explicit control visibility, chapter navigation, shortcuts, and clearer loading/error states. Real series covers are generated and cached locally. Bookmarks, manual read states, and local JSON backup/restore remain available. The vertical reader remembers page positions, offers real Continue Reading, derives chapter/series reading states, and saves supported reader preferences. The library supports natural sorting, search, chapter counts, and series detail lists.
 
 Choose a folder using the header or Library/Settings controls. Its directory handle is saved in native IndexedDB on this device. On launch, the app queries read permission without prompting. If permission needs renewal, click **Reconnect folder**. **Change folder** opens a new picker; **Disconnect folder** confirms before removing the saved connection, without changing local files.
 
@@ -168,7 +168,31 @@ Extraction, decoding, resizing, and caching remain entirely on the device. There
 - Remove a series and fully rescan; verify partial/failed scans retain inaccessible-series covers. Test a malformed cached record.
 - Test unavailable IndexedDB, mobile width, keyboard focus, reduced motion, and existing progress/bookmarks/read states/backup operations.
 
-Milestone 7 is complete. The next milestone is additional reading modes and final application polish.
+Milestone 7 is complete. Milestone 8 polishes the existing continuous-scroll reader as described below.
+
+## Continuous-scroll reader polish (Milestone 8)
+
+**Fullscreen** uses the browser Fullscreen API only after a button click or shortcut; its label and pressed state follow `fullscreenchange`, including Escape/browser exits. Unsupported browsers hide the button. Rejected requests show a polite message and leave reading available. The document enters fullscreen to preserve window scrolling and reading anchors; leaving the reader exits fullscreen entered by the reader.
+
+**Hide controls** leaves a small fixed **Show controls** button. Both actions remain keyboard accessible and preserve the page's position. The toolbar stays below the actual header height, including wrapped mobile headers, and its bounded height allows its controls to scroll on small screens. Visibility is session-only UI state; there is no timer, gesture, or stored-data change.
+
+**Previous chapter**, **Next chapter**, and the naturally sorted **Chapter** selector start a fresh session at the selected chapter's top. Buttons are disabled at the series boundaries and in preview mode. Seamless continuation updates the selector to the active chapter using the existing stable tracking without moving keyboard focus. Rapid selection cancels previous work, closes archives, and revokes page URLs; a cancelled native file request cannot open an old archive later. Existing bookmarks, progress restoration, continuation, and reader preferences keep their existing behaviour.
+
+Reader shortcuts: **F** toggles fullscreen, **W** fits width, **B** toggles the active page's bookmark, **H** hides/shows controls, **[**/**]** open the previous/next chapter, and **?** opens the shortcut-help dialog. Shortcuts are ignored in inputs, selects, textareas, editable elements, and open dialogs, and while modifier keys or composition are active. Normal scrolling keys remain unchanged. The help dialog supports Escape and restores focus on closing.
+
+Chapter opening and page loading have reserved placeholders and busy states. Empty chapters offer Retry and Back to series, failed pages offer their own Retry and Back actions, and failed continuation retains the current chapter above. Blocking errors and chapter changes use polite announcements; normal page tracking does not announce every page or move focus. Controls have at least 44px touch targets and visible focus styling; existing reduced-motion support remains in place. No new reading modes, archive formats, network requests, or database migrations are introduced.
+
+### Milestone 8 manual checklist
+
+- Enter/exit fullscreen by button, F, and Escape; check unsupported/rejected fullscreen and leaving the reader.
+- Hide/show controls using buttons and H at different scroll positions; check the page stays positioned and controls remain reachable.
+- Try every shortcut and the help dialog; verify shortcuts are ignored in selectors, inputs, editable content, and dialogs, while normal scrolling keys work.
+- Choose chapters using Previous/Next and the selector; verify boundaries, top-of-chapter opening, and selector synchronization during seamless scrolling.
+- Switch chapters rapidly during opening, extraction, and continuation; disconnect/change the folder and verify only the newest session remains.
+- Use a narrow mobile screen, a wrapped header, keyboard focus, and reduced motion; check 44px controls and no horizontal overflow.
+- Try corrupt/empty chapters, failed pages, and failed continuation; use Retry and Back to series and verify earlier readable pages remain available.
+
+Milestone 8 is complete. Milestone 9 is reliability and performance preparation. Validation for this milestone is the production build only; manual testing is left to the user.
 
 ## Production build
 
@@ -199,4 +223,5 @@ If you rename the repository, update `base`, `start_url`, and `scope` in `vite.c
 6A. Reading progress and preferences (complete)
 6B. Bookmarks, manual read states, and data export/import (complete)
 7. Real cover extraction and library visual polish (complete)
-8. Additional reading modes and final application polish (next)
+8. Continuous-scroll reader controls and polish (complete)
+9. Reliability and performance preparation (next)

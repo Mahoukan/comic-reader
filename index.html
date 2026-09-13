@@ -143,7 +143,8 @@
             <ul id="bookmark-list" class="bookmark-list"></ul>
           </section>
           <section class="view reader-view" data-view="reader" hidden>
-            <div class="reader-toolbar">
+            <button id="show-reader-controls" class="button button-secondary reader-show-controls" type="button" aria-controls="reader-toolbar" aria-expanded="false" hidden>Show controls</button>
+            <div class="reader-toolbar" id="reader-toolbar">
               <div class="reader-title">
                 <button class="text-button" type="button" id="reader-back-button">← Library</button>
                 <button class="text-button" type="button" id="reader-library-button">Library</button>
@@ -154,6 +155,11 @@
               </div>
 
               <div class="reader-controls">
+                <div class="reader-chapter-navigation" role="group" aria-label="Chapter navigation">
+                  <button id="reader-previous" class="button button-secondary" type="button" disabled>Previous chapter</button>
+                  <label for="reader-chapter-select">Chapter <select id="reader-chapter-select" disabled><option value="">No chapter open</option></select></label>
+                  <button id="reader-next" class="button button-secondary" type="button" disabled>Next chapter</button>
+                </div>
                 <label class="zoom-control">
                   <span>Zoom <output id="zoom-output">100%</output></span>
                   <input id="zoom-range" type="range" min="60" max="140" value="100">
@@ -163,6 +169,9 @@
                 <label>Page spacing <select data-preference="spacing"><option value="none">None</option><option value="small">Small</option><option value="medium">Medium</option><option value="large">Large</option></select></label>
                 <label>Background <select data-preference="background"><option value="black">Black</option><option value="dark">Dark</option><option value="light">Light</option></select></label>
                 <label class="continuation-control"><input id="reader-automatic-continuation" type="checkbox" checked> Continue automatically</label>
+                <button id="reader-fullscreen" class="button button-secondary" type="button" aria-pressed="false" hidden>Fullscreen</button>
+                <button id="reader-shortcuts" class="button button-secondary" type="button" aria-haspopup="dialog">Shortcuts</button>
+                <button id="hide-reader-controls" class="button button-secondary" type="button" aria-controls="reader-toolbar" aria-expanded="true">Hide controls</button>
               </div>
             </div>
 
@@ -230,6 +239,20 @@
       </nav>
     </div>
 
+    <dialog id="reader-shortcut-dialog" aria-labelledby="reader-shortcut-title" aria-describedby="reader-shortcut-description">
+      <h2 id="reader-shortcut-title">Reader shortcuts</h2>
+      <p id="reader-shortcut-description">Shortcuts work while reading, outside text fields, selectors, editable content, and dialogs. Fullscreen requires browser support.</p>
+      <dl class="reader-shortcut-list">
+        <dt><kbd>F</kbd></dt><dd>Toggle fullscreen</dd>
+        <dt><kbd>W</kbd></dt><dd>Fit width</dd>
+        <dt><kbd>B</kbd></dt><dd>Toggle bookmark for the active page</dd>
+        <dt><kbd>H</kbd></dt><dd>Hide or show controls</dd>
+        <dt><kbd>[</kbd> / <kbd>]</kbd></dt><dd>Previous / next chapter</dd>
+        <dt><kbd>?</kbd></dt><dd>Open this help</dd>
+      </dl>
+      <p>Space, Page Up, Page Down, and arrow keys keep their normal scrolling behaviour. Escape closes this dialog.</p>
+      <button id="close-reader-shortcuts" class="button button-primary" type="button" autofocus>Close shortcuts</button>
+    </dialog>
     <dialog id="disconnect-dialog" aria-labelledby="disconnect-title" aria-describedby="disconnect-description">
       <h2 id="disconnect-title">Disconnect library folder?</h2>
       <p id="disconnect-description">This removes the saved connection on this device. Your local files will not be deleted or changed.</p>

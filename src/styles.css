@@ -933,3 +933,32 @@ dialog::backdrop {
 .real-comic-card .cover-placeholder.has-cover > span { visibility: hidden; }
 .cover-status { min-height: 1.2em; }
 .cover-retry { justify-self: start; min-height: 44px; font-size: .8rem; }
+
+.reader-toolbar { top: var(--reader-toolbar-top, 64px); align-items: flex-start; max-height: 45vh; overflow-y: auto; }
+.reader-controls { min-width: 0; flex: 1; }
+.reader-chapter-navigation { display: flex; flex-wrap: wrap; align-items: end; gap: .5rem; width: 100%; }
+.reader-controls label { display: grid; gap: .25rem; min-width: 0; font-size: .8rem; color: #b9c0ce; }
+.reader-controls .continuation-control { display: flex; }
+.reader-chapter-navigation label { flex: 1; min-width: 120px; }
+.reader-controls select { width: 100%; max-width: 100%; min-height: 44px; }
+.reader-view button, .reader-view input[type="range"] { min-height: 44px; }
+.reader-show-controls { position: fixed; right: 1rem; top: calc(var(--reader-toolbar-top, 64px) + .75rem); z-index: 11; }
+.chapter-content { min-height: 12rem; }
+.chapter-content:has(.real-comic-page) { min-height: 0; }
+.chapter-content[aria-busy="true"] { padding: 2rem 1rem; color: var(--muted); }
+.real-comic-page p { max-width: 38rem; text-align: center; overflow-wrap: anywhere; }
+.real-comic-page > .button { margin: .25rem; }
+.real-comic-page:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
+.chapter-start:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
+.reader-shortcut-list { display: grid; grid-template-columns: auto 1fr; gap: .7rem 1rem; }
+.reader-shortcut-list dd { margin: 0; }
+kbd { font-family: inherit; border: 1px solid var(--line); border-radius: 4px; padding: .1rem .4rem; }
+#reader-shortcut-dialog { max-height: calc(100dvh - 2rem); overflow-y: auto; }
+#reader-shortcut-dialog button { min-height: 44px; }
+@media (max-width: 760px) {
+  .reader-toolbar { position: sticky; top: var(--reader-toolbar-top, 64px); flex-direction: column; max-height: 40dvh; }
+  .reader-controls { width: 100%; }
+  .reader-chapter-navigation > button { flex: 1; }
+  .reader-chapter-navigation label { flex-basis: 100%; order: -1; }
+  .reader-show-controls { right: .5rem; }
+}

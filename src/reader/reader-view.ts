@@ -5,6 +5,7 @@ import type { ComicChapter, ComicSeries } from "../library/library-scanner";
 import { ArchiveError } from "./archive-safety";
 import type { ComicPage } from "./cbz-reader";
 import { ReadingSession, type SessionChapter } from "./reading-session";
+import { initializeReaderControls } from "./reader-controls";
 
 interface PageSlot {
   page: ComicPage;
@@ -12,6 +13,7 @@ interface PageSlot {
   container: HTMLElement;
   message: HTMLElement;
   retry: HTMLButtonElement;
+  back: HTMLButtonElement;
   image: HTMLImageElement | null;
   state: "idle" | "queued" | "loading" | "loaded" | "error";
 }
@@ -142,7 +144,7 @@ export function initializeReaderView(
     scheduleTracking();
   }
 
-  function clear(save = true): Promise<void> {
+  function clear(save = true, leaving = true): Promise<void> {
     if (save) { trackVisible(false); capture(); flushProgress(); }
     else { window.clearTimeout(saveTimer); pending = null; pendingToken = null; }
     restoring = false; restore = undefined;
@@ -157,6 +159,7 @@ export function initializeReaderView(
     syncBookmark();
     openingSelection = false;
     startingSelection = null;
+    if (leaving) { controls.leave(); controls.reset(); }
     // close() revokes URLs synchronously, then waits for pending operations.
     const closing = previous?.close();
     sections.clear(); pageTargets.clear(); endTargets.clear();
@@ -192,7 +195,8 @@ export function initializeReaderView(
     section.setAttribute("aria-labelledby", start.id);
     const content = document.createElement("div");
     content.className = "chapter-content";
-    content.textContent = "Opening chapter…";
+    content.textContent = `Opening ${chapter.chapter.displayName}… Pages will load as you scroll.`;
+    content.setAttribute("aria-busy", "true");
     const end = document.createElement("div");
     end.className = "chapter-end";
     end.textContent = `End of ${chapter.chapter.displayName}`;
@@ -256,6 +260,9 @@ export function initializeReaderView(
   function enqueue(active: ReadingSession, view: ChapterSection, slot: PageSlot): void {
     if (session !== active || !active.isActive(view.chapter) || !["idle", "error"].includes(slot.state)) return;
     slot.state = "queued";
+    if (document.activeElement === slot.retry) slot.container.focus({ preventScroll: true });
+    slot.retry.hidden = true;
+    slot.back.hidden = true;
     active.enqueue(view.chapter, () => loadSlot(active, view, slot));
   }
 
@@ -315,6 +322,8 @@ export function initializeReaderView(
       const anchor = readingAnchor();
       const before = anchor?.getBoundingClientRect().top ?? null;
       slot.state = "loaded";
+      image.width = image.naturalWidth;
+      image.height = image.naturalHeight;
       image.hidden = false;
       slot.message.hidden = true;
       slot.container.classList.add("loaded");
@@ -328,8 +337,10 @@ export function initializeReaderView(
       console.warn("Unable to load comic page", error);
       slot.image?.remove(); slot.image = null;
       slot.state = "error";
-      slot.message.textContent = error instanceof ArchiveError ? error.message : `Page ${slot.number} could not be loaded.`;
+      slot.message.hidden = false;
+      slot.message.textContent = `Page ${slot.number} could not be loaded. Retry this page or return to the series.`;
       slot.retry.hidden = false;
+      slot.back.hidden = false;
       status.textContent = `${view.chapter.chapter.displayName}: page ${slot.number} could not be loaded. Retry is available.`;
       // The connection controller checks actual root permission before disconnecting anything.
       if (restoring && restore && view.chapter.index === active.startIndex && slot.number - 1 === Math.min(restore.pageIndex, view.slots.length - 1)) finishRestore(slot, true);
@@ -342,13 +353,24 @@ export function initializeReaderView(
     const view = sections.get(chapter.index)!;
     const previous = sections.get(chapter.index - 1);
     if (previous) updateBoundary(active, previous);
-    if (chapter.state === "opening") { view.content.textContent = "Opening chapter…"; return; }
+    if (chapter.state === "opening") {
+      view.content.setAttribute("aria-busy", "true");
+      view.content.textContent = `Opening ${chapter.chapter.displayName}… Pages will load as you scroll.`;
+      return;
+    }
+    view.content.setAttribute("aria-busy", "false");
     if (chapter.state === "failed") {
       console.warn("Unable to open chapter", error);
       const message = document.createElement("p");
-      message.textContent = `${chapter.chapter.displayName}: ${chapterError(error)}`;
+      message.textContent = `${chapter.index > active.currentIndex ? "Next chapter " : ""}${chapter.chapter.displayName}: ${chapterError(error)}${chapter.index > active.currentIndex ? " The current chapter remains available above." : ""}`;
       view.content.replaceChildren(message,
-        button("Retry chapter", () => { if (session === active) void active.retry(chapter); }),
+        button("Retry chapter", () => {
+          if (session !== active) return;
+          const heading = view.section.querySelector<HTMLElement>(".chapter-start")!;
+          heading.tabIndex = -1;
+          heading.focus({ preventScroll: true });
+          void active.retry(chapter);
+        }),
         button("Back to series", goBack));
       view.boundary.replaceChildren();
       restoring = false; restore = undefined;
@@ -361,17 +383,29 @@ export function initializeReaderView(
       const container = document.createElement("div");
       container.className = "real-comic-page";
       container.dataset.pageNumber = String(index + 1);
+      container.tabIndex = -1;
+      container.setAttribute("role", "group");
+      container.setAttribute("aria-label", `Page ${index + 1}`);
       const message = document.createElement("p");
       message.textContent = `Page ${index + 1}`;
       const retry = button(`Retry page ${index + 1}`, () => enqueue(active, view, slot));
       retry.hidden = true;
-      const slot: PageSlot = { page, number: index + 1, container, message, retry, image: null, state: "idle" };
-      container.append(message, retry);
+      const back = button("Back to series", goBack);
+      back.hidden = true;
+      const slot: PageSlot = { page, number: index + 1, container, message, retry, back, image: null, state: "idle" };
+      container.append(message, retry, back);
       pageTargets.set(container, { section: view, slot });
       return slot;
     });
     view.content.replaceChildren(...view.slots.map(slot => slot.container));
-    if (!view.slots.length) view.content.textContent = "This chapter contains no supported image pages.";
+    if (!view.slots.length) {
+      const message = document.createElement("p");
+      message.textContent = "This chapter contains no supported image pages. You can retry after replacing the file, choose another chapter, or return to the series.";
+      view.content.replaceChildren(message,
+        button("Retry chapter", () => { if (session === active) open(active.series, chapter.chapter); }),
+        button("Back to series", goBack));
+      status.textContent = `${chapter.chapter.displayName} has no supported image pages.`;
+    }
     if (restoring && restore && chapter.index === active.startIndex) {
       const target = view.slots[Math.min(restore.pageIndex, view.slots.length - 1)];
       if (target) { positionRestore(target); enqueue(active, view, target); }
@@ -382,7 +416,7 @@ export function initializeReaderView(
     endTargets.set(view.end, view);
     endObserver?.observe(view.end);
     updateBoundary(active, view);
-    if (!restoring && chapter.index === active.currentIndex) status.textContent = `${chapter.chapter.displayName} · ${archive.pages.length} pages. Scroll to read.`;
+    if (!restoring && chapter.index === active.currentIndex && view.slots.length) status.textContent = `${chapter.chapter.displayName} · ${archive.pages.length} pages. Scroll to read.`;
     scheduleTracking();
   }
 
@@ -439,19 +473,22 @@ export function initializeReaderView(
     positionRestore(slot); restoring = false; restore = undefined;
     scheduleTracking();
   }
-  function open(series: ComicSeries, chapter: ComicChapter, position?: ReadingAnchor): void {
+  function open(series: ComicSeries, chapter: ComicChapter, position?: ReadingAnchor, focusBack = true): void {
     if (destroyed) return;
-    void clear();
+    void clear(true, false);
     restore = position; restoring = Boolean(position);
     const operation = generation;
     openingSelection = true;
     startingSelection = { series, chapter };
+    controls.sync(series, chapter);
     title.textContent = series.name;
     chapterName.textContent = chapter.displayName;
     backButton.textContent = "← Back to series";
     status.textContent = restoring ? "Restoring reading position..." : "Opening chapter...";
     applyPreferences();
-    backButton.focus();
+    if (!position) window.scrollTo({ top: 0, behavior: "instant" });
+    if (focusBack) (document.querySelector<HTMLElement>("#reader-toolbar")!.hidden
+      ? document.querySelector<HTMLButtonElement>("#show-reader-controls")! : backButton).focus({ preventScroll: true });
     transition = transition.then(async () => {
       if (generation !== operation) return;
       const active = new ReadingSession(series, chapter, {
@@ -459,7 +496,10 @@ export function initializeReaderView(
         changed: (mounted, error) => chapterChanged(active, mounted, error),
         removed: removeSection,
         currentChanged: mounted => {
-          if (session === active) status.textContent = `Now reading ${mounted.chapter.displayName}.`;
+          if (session === active) {
+            controls.sync(active.series, mounted.chapter);
+            status.textContent = `Now reading ${mounted.chapter.displayName}.`;
+          }
         },
       });
       session = active;
@@ -487,7 +527,8 @@ export function initializeReaderView(
       if (generation !== operation) return;
       console.warn("Unable to start reading session", error);
       openingSelection = false;
-      status.textContent = "This reading session could not be started. Return to the library and try again.";
+      status.textContent = "This reading session could not be started. Retry the chapter or return to the series.";
+      pagesElement.replaceChildren(button("Retry chapter", () => open(series, chapter)), button("Back to series", goBack));
     });
   }
 
@@ -507,6 +548,19 @@ export function initializeReaderView(
 
   const onZoom = (): void => data.setPreferences({ zoom: Number(zoom.value) });
   const fitWidth = (): void => data.setPreferences({ zoom: 100 });
+  const controls = initializeReaderControls({
+    open: (series, chapter) => open(series, chapter, undefined, false),
+    fitWidth,
+    bookmark: () => { void toggleBookmark(); },
+    announce: message => { status.textContent = message; },
+    layout: change => {
+      const anchor = readingAnchor();
+      const before = anchor?.getBoundingClientRect().top ?? null;
+      change();
+      preserveAnchor(anchor, before);
+      scheduleTracking();
+    },
+  });
   const libraryAction = (): void => { void clear(); backToLibrary(); };
   const continuationChanged = (event: Event): void => {
     const enabled = (event.currentTarget as HTMLInputElement).checked;
@@ -529,6 +583,7 @@ export function initializeReaderView(
   const destroy = (): void => {
     destroyed = true;
     void clear();
+    controls.destroy();
     zoom.removeEventListener("input", onZoom);
     document.querySelector("#fit-width-button")!.removeEventListener("click", fitWidth);
     backButton.removeEventListener("click", goBack);
