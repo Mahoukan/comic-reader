@@ -137,10 +137,11 @@
           <section class="view reader-view" data-view="reader" hidden>
             <div class="reader-toolbar">
               <div class="reader-title">
-                <button class="text-button" type="button" data-view-target="library">← Library</button>
+                <button class="text-button" type="button" id="reader-back-button">← Library</button>
+                <button class="text-button" type="button" id="reader-library-button">Library</button>
                 <div>
-                  <strong>Skybound Archive · Preview</strong>
-                  <span>Chapter 12 · Page 18 of 26</span>
+                  <strong id="reader-series-name">Reader</strong>
+                  <span id="reader-chapter-name">Choose a chapter from your library.</span>
                 </div>
               </div>
 
@@ -153,16 +154,8 @@
               </div>
             </div>
 
-            <div class="pages" id="pages">
-              <div class="comic-page"><span>Page 25</span></div>
-              <div class="comic-page"><span>Page 26</span></div>
-              <div class="chapter-divider">
-                <span>End of Chapter 12</span>
-                <strong>Chapter 13</strong>
-                <span>Continuing automatically</span>
-              </div>
-              <div class="comic-page"><span>Page 1</span></div>
-            </div>
+            <p class="reader-status" id="reader-status" role="status" aria-live="polite" aria-atomic="true">No chapter open.</p>
+            <div class="pages" id="pages"></div>
           </section>
 
           <section class="view" data-view="settings" hidden>
@@ -177,25 +170,8 @@
               <section class="settings-panel">
                 <h2>Reader</h2>
 
-                <label class="setting-row">
-                  <span><strong>Default layout</strong><small>How chapters open</small></span>
-                  <select><option>Vertical scroll</option><option>Single page</option><option>Two-page spread</option></select>
-                </label>
-
-                <label class="setting-row">
-                  <span><strong>Continue automatically</strong><small>Load the next chapter at the end</small></span>
-                  <input type="checkbox" checked>
-                </label>
-
-                <label class="setting-row">
-                  <span><strong>Reading direction</strong><small>Used by paged layouts</small></span>
-                  <select><option>Left to right</option><option>Right to left</option></select>
-                </label>
-
-                <label class="setting-row">
-                  <span><strong>Page spacing</strong><small>Gap between page images</small></span>
-                  <select><option>Small</option><option>None</option><option>Medium</option><option>Large</option></select>
-                </label>
+                <p class="scan-status">Chapters open in vertical scroll. Zoom and Fit width are available in the reader.</p>
+                <p class="scan-status">Automatic chapter continuation and saved preferences are coming in later milestones.</p>
               </section>
 
               <section class="settings-panel">

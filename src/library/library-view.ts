@@ -1,6 +1,6 @@
 import type { LibraryConnection } from "./connection";
 import { checkFolderAvailable, checkReadPermission } from "./folder-access";
-import { scanLibrary, type ComicSeries, type LibraryScan } from "./library-scanner";
+import { scanLibrary, type ComicChapter, type ComicSeries, type LibraryScan } from "./library-scanner";
 import { naturalCompare } from "./natural-sort";
 
 const count = (value: number, noun: string): string => `${value} ${noun}${value === 1 ? "" : "s"}`;
@@ -8,7 +8,8 @@ const count = (value: number, noun: string): string => `${value} ${noun}${value 
 export function initializeLibraryView(
   openPreview: () => void,
   reportAccessFailure: (root: FileSystemDirectoryHandle, error: unknown) => Promise<void>,
-): { updateConnection: (connection: LibraryConnection) => void; resetDetail: () => void } {
+  openChapter: (series: ComicSeries, chapter: ComicChapter) => void,
+): { updateConnection: (connection: LibraryConnection) => void; resetDetail: () => void; returnToSeries: (series: ComicSeries, chapter: ComicChapter) => void } {
   const grid = document.querySelector<HTMLDivElement>("#comic-grid")!;
   const samples = Array.from(grid.querySelectorAll<HTMLButtonElement>(".comic-card"));
   const search = document.querySelector<HTMLInputElement>("#library-search")!;
@@ -45,15 +46,21 @@ export function initializeLibraryView(
     returnCard = null;
   }
 
-  function openSeries(series: ComicSeries, card: HTMLButtonElement): void {
+  function openSeries(series: ComicSeries, card: HTMLButtonElement | null): void {
     returnCard = card;
     overview.hidden = true;
     detail.hidden = false;
     detailTitle.textContent = series.name;
-    detailCount.textContent = `${count(series.chapters.length, "chapter")} · Reading is coming in Milestone 4.`;
+    detailCount.textContent = count(series.chapters.length, "chapter");
     const rows = series.chapters.map(chapter => {
       const row = document.createElement("li");
-      row.textContent = chapter.displayName;
+      const button = document.createElement("button");
+      button.type = "button";
+      button.className = "chapter-button";
+      button.textContent = chapter.displayName;
+      button.dataset.chapterId = chapter.id;
+      button.addEventListener("click", () => openChapter(series, chapter));
+      row.append(button);
       return row;
     });
     chapterList.replaceChildren(...rows);
@@ -85,7 +92,7 @@ export function initializeLibraryView(
   function renderLibrary(): void {
     const query = search.value.trim().toLocaleLowerCase();
     const real = Boolean(root);
-    subtitle.textContent = real ? "Your local series · CBZ contents are not opened yet." : "Preview library · These sample comics are not from your folder.";
+    subtitle.textContent = real ? "Your local series · Choose a series and chapter to read." : "Preview library · These sample comics are not from your folder.";
     heading.textContent = real ? "All series" : "Preview series";
     continuePanel.hidden = real;
     let total = 0;
@@ -195,5 +202,17 @@ export function initializeLibraryView(
   rescanButtons.forEach(button => button.addEventListener("click", () => { if (!connection.busy) void scan(); }));
   renderLibrary();
   updateButtons();
-  return { updateConnection, resetDetail: () => resetDetail() };
+  return {
+    updateConnection,
+    resetDetail: () => resetDetail(),
+    returnToSeries(series, chapter): void {
+      if (!result?.series.includes(series)) { resetDetail(); search.focus(); return; }
+      overview.hidden = true;
+      detail.hidden = false;
+      const button = Array.from(chapterList.querySelectorAll<HTMLButtonElement>("button"))
+        .find(item => item.dataset.chapterId === chapter.id);
+      if (button) button.focus();
+      else openSeries(series, returnCard);
+    },
+  };
 }
