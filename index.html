@@ -18,7 +18,8 @@
 
         <div class="topbar-actions">
           <span class="offline-status"><span aria-hidden="true"></span> Ready offline</span>
-          <button class="button button-secondary" type="button" id="folder-button">Demo library</button>
+          <span class="connection-status" data-folder-status>Restoring saved folder…</span>
+          <button class="button button-secondary" type="button" id="folder-button" data-folder-choose disabled>Choose library folder</button>
           <button class="button button-secondary" type="button" id="rescan-button">Rescan</button>
         </div>
       </header>
@@ -32,9 +33,9 @@
           </nav>
 
           <div class="library-summary">
-            <strong>Demo library</strong>
-            <span>4 series · 59 chapters</span>
-            <span>Folder access is next</span>
+            <strong data-folder-name>Local library</strong>
+            <span data-folder-status>Restoring saved folder…</span>
+            <span>Preview · 4 sample series</span>
           </div>
         </aside>
 
@@ -43,9 +44,21 @@
             <div class="view-heading">
               <div>
                 <h1>Your library</h1>
-                <p>Continue reading or choose a series.</p>
+                <p>Preview library · These sample comics are not from your folder.</p>
               </div>
             </div>
+
+            <section class="connection-panel" aria-label="Library connection">
+              <div role="status" aria-live="polite">
+                <strong data-folder-name>Local library</strong>
+                <span class="connection-status" data-folder-status>Restoring saved folder…</span>
+                <p data-folder-description>Checking the saved folder without requesting permission.</p>
+              </div>
+              <div class="connection-actions">
+                <button class="button button-primary" type="button" data-folder-choose disabled>Choose library folder</button>
+                <button class="button button-secondary" type="button" data-folder-reconnect hidden>Reconnect folder</button>
+              </div>
+            </section>
 
             <div class="library-tools">
               <label class="search-field">
@@ -66,7 +79,7 @@
             <article class="continue-panel">
               <div class="cover-placeholder cover-small" aria-hidden="true"><span>SA</span></div>
               <div class="continue-details">
-                <span class="eyebrow">Continue reading</span>
+                <span class="eyebrow">Preview · Continue reading</span>
                 <h2>Skybound Archive</h2>
                 <p>Chapter 12 · Page 18 of 26</p>
                 <div class="progress-track" role="progressbar" aria-label="Skybound Archive progress" aria-valuemin="0" aria-valuemax="100" aria-valuenow="64">
@@ -77,7 +90,7 @@
             </article>
 
             <div class="section-heading">
-              <h2>All series</h2>
+              <h2>Preview series</h2>
               <span id="series-count">4 series</span>
             </div>
 
@@ -115,7 +128,7 @@
               <div class="reader-title">
                 <button class="text-button" type="button" data-view-target="library">← Library</button>
                 <div>
-                  <strong>Skybound Archive</strong>
+                  <strong>Skybound Archive · Preview</strong>
                   <span>Chapter 12 · Page 18 of 26</span>
                 </div>
               </div>
@@ -177,14 +190,19 @@
               <section class="settings-panel">
                 <h2>Local library</h2>
                 <div class="permission-panel">
-                  <strong>No folder connected yet</strong>
-                  <p>Folder access will be added in the next milestone.</p>
-                  <button class="button button-secondary full-width" type="button" id="settings-folder-button">Choose folder</button>
+                  <strong data-folder-name>Local library</strong>
+                  <span class="connection-status" data-folder-status>Restoring saved folder…</span>
+                  <p data-folder-description>Checking the saved folder without requesting permission.</p>
+                  <div class="connection-actions">
+                    <button class="button button-secondary full-width" type="button" id="settings-folder-button" data-folder-choose disabled>Choose library folder</button>
+                    <button class="button button-secondary full-width" type="button" data-folder-reconnect hidden>Reconnect folder</button>
+                    <button class="button button-secondary full-width" type="button" id="disconnect-folder-button" hidden>Disconnect folder</button>
+                  </div>
                 </div>
 
                 <label class="setting-row">
-                  <span><strong>Scan on launch</strong><small>Find renamed or added chapters</small></span>
-                  <input type="checkbox" checked>
+                  <span><strong>Scan on launch</strong><small>Coming in Milestone 3</small></span>
+                  <input type="checkbox" disabled>
                 </label>
               </section>
             </div>
@@ -199,6 +217,14 @@
       </nav>
     </div>
 
+    <dialog id="disconnect-dialog" aria-labelledby="disconnect-title" aria-describedby="disconnect-description">
+      <h2 id="disconnect-title">Disconnect library folder?</h2>
+      <p id="disconnect-description">This removes the saved connection on this device. Your local files will not be deleted or changed.</p>
+      <div class="connection-actions">
+        <button class="button button-secondary" type="button" id="cancel-disconnect" autofocus>Cancel</button>
+        <button class="button button-primary" type="button" id="confirm-disconnect">Disconnect folder</button>
+      </div>
+    </dialog>
     <div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
     <script type="module" src="/src/main.ts"></script>
   </body>

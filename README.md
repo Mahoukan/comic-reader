@@ -11,7 +11,11 @@ npm install
 npm run dev
 ```
 
-Open the local address shown in the terminal. The application currently contains the first interface milestone with representative library data.
+Open the local address shown in the terminal. Milestone 2 adds read-only local folder connections. Comic cards and the reader remain clearly labelled previews; folder scanning belongs to Milestone 3.
+
+Choose a folder using the header or Library/Settings controls. Its directory handle is saved in native IndexedDB on this device. On launch, the app queries read permission without prompting. If permission needs renewal, click **Reconnect folder**. **Change folder** opens a new picker; **Disconnect folder** confirms before removing the saved connection, without changing local files.
+
+Persistent folder access requires the directory-picker API, currently available in compatible Chromium-based browsers such as desktop Chrome and Edge, on HTTPS or localhost. Unsupported browsers can still use the preview interface. Browser storage or permissions may be cleared; failed persistence is explained in the connection panel. No folder contents or names are uploaded.
 
 ## Production build
 

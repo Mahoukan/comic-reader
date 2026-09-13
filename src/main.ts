@@ -1,5 +1,6 @@
 import "./styles.css";
 import { registerSW } from "virtual:pwa-register";
+import { initializeLibraryConnection } from "./library/connection";
 
 type ViewName = "library" | "reader" | "settings";
 
@@ -104,12 +105,10 @@ function showToast(message: string): void {
   }, 2600);
 }
 
-document.querySelectorAll("#folder-button, #settings-folder-button").forEach((button) => {
-  button.addEventListener("click", () => showToast("Local folder access is the next milestone."));
-});
+initializeLibraryConnection(showToast);
 
 document.querySelector("#rescan-button")?.addEventListener("click", () => {
-  showToast("Demo library refreshed.");
+  showToast("Library scanning is coming in Milestone 3.");
 });
 
 registerSW({
