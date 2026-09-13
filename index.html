@@ -1,0 +1,205 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="A private, offline reader for local CBZ libraries.">
+    <meta name="theme-color" content="#101214">
+    <link rel="icon" type="image/svg+xml" href="./favicon.svg">
+    <title>Comic Reader</title>
+  </head>
+  <body>
+    <div class="app-shell">
+      <header class="topbar">
+        <button class="brand" type="button" data-view-target="library" aria-label="Open library">
+          <span class="brand-mark" aria-hidden="true">CR</span>
+          <span>Comic Reader</span>
+        </button>
+
+        <div class="topbar-actions">
+          <span class="offline-status"><span aria-hidden="true"></span> Ready offline</span>
+          <button class="button button-secondary" type="button" id="folder-button">Demo library</button>
+          <button class="button button-secondary" type="button" id="rescan-button">Rescan</button>
+        </div>
+      </header>
+
+      <div class="workspace">
+        <aside class="sidebar" aria-label="Primary navigation">
+          <nav>
+            <button class="nav-button active" type="button" data-view-target="library" aria-pressed="true">Library</button>
+            <button class="nav-button" type="button" data-view-target="reader" aria-pressed="false">Reader</button>
+            <button class="nav-button" type="button" data-view-target="settings" aria-pressed="false">Settings</button>
+          </nav>
+
+          <div class="library-summary">
+            <strong>Demo library</strong>
+            <span>4 series · 59 chapters</span>
+            <span>Folder access is next</span>
+          </div>
+        </aside>
+
+        <main class="main-content">
+          <section class="view" data-view="library">
+            <div class="view-heading">
+              <div>
+                <h1>Your library</h1>
+                <p>Continue reading or choose a series.</p>
+              </div>
+            </div>
+
+            <div class="library-tools">
+              <label class="search-field">
+                <span class="visually-hidden">Search library</span>
+                <input id="library-search" type="search" placeholder="Search your library" autocomplete="off">
+              </label>
+
+              <label>
+                <span class="visually-hidden">Sort library</span>
+                <select id="library-sort">
+                  <option value="recent">Recently read</option>
+                  <option value="title">Title</option>
+                  <option value="progress">Progress</option>
+                </select>
+              </label>
+            </div>
+
+            <article class="continue-panel">
+              <div class="cover-placeholder cover-small" aria-hidden="true"><span>SA</span></div>
+              <div class="continue-details">
+                <span class="eyebrow">Continue reading</span>
+                <h2>Skybound Archive</h2>
+                <p>Chapter 12 · Page 18 of 26</p>
+                <div class="progress-track" role="progressbar" aria-label="Skybound Archive progress" aria-valuemin="0" aria-valuemax="100" aria-valuenow="64">
+                  <div class="progress-value"></div>
+                </div>
+              </div>
+              <button class="button button-primary" type="button" id="continue-button">Continue</button>
+            </article>
+
+            <div class="section-heading">
+              <h2>All series</h2>
+              <span id="series-count">4 series</span>
+            </div>
+
+            <div class="comic-grid" id="comic-grid">
+              <button class="comic-card" type="button" data-title="Skybound Archive" data-progress="64" data-recent="4">
+                <span class="cover-placeholder cover-one" aria-hidden="true"><span>SA</span></span>
+                <strong>Skybound Archive</strong>
+                <span>12 of 24 chapters</span>
+              </button>
+
+              <button class="comic-card" type="button" data-title="Glass City" data-progress="100" data-recent="3">
+                <span class="cover-placeholder cover-two" aria-hidden="true"><span>GC</span></span>
+                <strong>Glass City</strong>
+                <span>Completed · 8 chapters</span>
+              </button>
+
+              <button class="comic-card" type="button" data-title="The Last Signal" data-progress="30" data-recent="2">
+                <span class="cover-placeholder cover-three" aria-hidden="true"><span>LS</span></span>
+                <strong>The Last Signal</strong>
+                <span>3 unread chapters</span>
+              </button>
+
+              <button class="comic-card" type="button" data-title="Witchlight" data-progress="0" data-recent="1">
+                <span class="cover-placeholder cover-four" aria-hidden="true"><span>W</span></span>
+                <strong>Witchlight</strong>
+                <span>Unread · 17 chapters</span>
+              </button>
+            </div>
+
+            <p class="empty-message" id="empty-message" hidden>No series match that search.</p>
+          </section>
+
+          <section class="view reader-view" data-view="reader" hidden>
+            <div class="reader-toolbar">
+              <div class="reader-title">
+                <button class="text-button" type="button" data-view-target="library">← Library</button>
+                <div>
+                  <strong>Skybound Archive</strong>
+                  <span>Chapter 12 · Page 18 of 26</span>
+                </div>
+              </div>
+
+              <div class="reader-controls">
+                <label class="zoom-control">
+                  <span>Zoom <output id="zoom-output">100%</output></span>
+                  <input id="zoom-range" type="range" min="60" max="140" value="100">
+                </label>
+                <button class="button button-secondary" type="button" id="fit-width-button">Fit width</button>
+              </div>
+            </div>
+
+            <div class="pages" id="pages">
+              <div class="comic-page"><span>Page 25</span></div>
+              <div class="comic-page"><span>Page 26</span></div>
+              <div class="chapter-divider">
+                <span>End of Chapter 12</span>
+                <strong>Chapter 13</strong>
+                <span>Continuing automatically</span>
+              </div>
+              <div class="comic-page"><span>Page 1</span></div>
+            </div>
+          </section>
+
+          <section class="view" data-view="settings" hidden>
+            <div class="view-heading">
+              <div>
+                <h1>Settings</h1>
+                <p>These preferences stay on this device.</p>
+              </div>
+            </div>
+
+            <div class="settings-grid">
+              <section class="settings-panel">
+                <h2>Reader</h2>
+
+                <label class="setting-row">
+                  <span><strong>Default layout</strong><small>How chapters open</small></span>
+                  <select><option>Vertical scroll</option><option>Single page</option><option>Two-page spread</option></select>
+                </label>
+
+                <label class="setting-row">
+                  <span><strong>Continue automatically</strong><small>Load the next chapter at the end</small></span>
+                  <input type="checkbox" checked>
+                </label>
+
+                <label class="setting-row">
+                  <span><strong>Reading direction</strong><small>Used by paged layouts</small></span>
+                  <select><option>Left to right</option><option>Right to left</option></select>
+                </label>
+
+                <label class="setting-row">
+                  <span><strong>Page spacing</strong><small>Gap between page images</small></span>
+                  <select><option>Small</option><option>None</option><option>Medium</option><option>Large</option></select>
+                </label>
+              </section>
+
+              <section class="settings-panel">
+                <h2>Local library</h2>
+                <div class="permission-panel">
+                  <strong>No folder connected yet</strong>
+                  <p>Folder access will be added in the next milestone.</p>
+                  <button class="button button-secondary full-width" type="button" id="settings-folder-button">Choose folder</button>
+                </div>
+
+                <label class="setting-row">
+                  <span><strong>Scan on launch</strong><small>Find renamed or added chapters</small></span>
+                  <input type="checkbox" checked>
+                </label>
+              </section>
+            </div>
+          </section>
+        </main>
+      </div>
+
+      <nav class="mobile-nav" aria-label="Primary navigation">
+        <button class="nav-button active" type="button" data-view-target="library" aria-pressed="true">Library</button>
+        <button class="nav-button" type="button" data-view-target="reader" aria-pressed="false">Reader</button>
+        <button class="nav-button" type="button" data-view-target="settings" aria-pressed="false">Settings</button>
+      </nav>
+    </div>
+
+    <div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>
