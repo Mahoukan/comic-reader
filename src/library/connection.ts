@@ -1,11 +1,21 @@
 import { checkFolderAvailable, checkReadPermission, chooseFolder, requestReadPermission, supportsFolderAccess } from "./folder-access";
 import { getSavedFolder, removeSavedFolder, saveFolder } from "../storage/database";
 
-type State = "unsupported" | "disconnected" | "connected" | "permission" | "denied" | "unavailable" | "restoring";
+export type ConnectionState = "unsupported" | "disconnected" | "connected" | "permission" | "denied" | "unavailable" | "restoring";
+export interface LibraryConnection {
+  state: ConnectionState;
+  handle: FileSystemDirectoryHandle | null;
+  revision: number;
+  busy: boolean;
+}
 
-export function initializeLibraryConnection(notify: (message: string) => void): void {
+export function initializeLibraryConnection(
+  notify: (message: string) => void,
+  onChange: (connection: LibraryConnection) => void,
+): { reportAccessFailure: (root: FileSystemDirectoryHandle, error: unknown) => Promise<void> } {
   let handle: FileSystemDirectoryHandle | null = null;
-  let state: State = supportsFolderAccess() ? "restoring" : "unsupported";
+  let state: ConnectionState = supportsFolderAccess() ? "restoring" : "unsupported";
+  let revision = 0;
   let busy = false;
   let storageMessage = "";
   let actionMessage = "";
@@ -15,15 +25,15 @@ export function initializeLibraryConnection(notify: (message: string) => void): 
   const disconnectButton = document.querySelector<HTMLButtonElement>("#disconnect-folder-button")!;
 
   function render(): void {
-    const statuses: Record<State, string> = {
+    const statuses: Record<ConnectionState, string> = {
       unsupported: "Folder access unavailable", disconnected: "No library connected.",
       connected: "Connected", permission: "Reconnect folder", denied: "Permission denied",
       unavailable: "Folder no longer available", restoring: "Restoring saved folder…",
     };
-    const descriptions: Record<State, string> = {
+    const descriptions: Record<ConnectionState, string> = {
       unsupported: "Persistent local folder access requires a compatible Chromium-based browser such as desktop Chrome or Edge.",
       disconnected: "Choose a comic-library folder. Access is read-only and stays on this device.",
-      connected: "Read-only folder access. Library scanning is coming in Milestone 3.",
+      connected: "Read-only folder access. Immediate series folders are scanned; CBZ contents stay unopened.",
       permission: "Your saved folder needs read permission. Click Reconnect folder to continue.",
       denied: "Read permission was denied. You can reconnect to try again or choose another folder.",
       unavailable: "The saved folder could not be opened. Check that it is still available or choose another folder.",
@@ -48,6 +58,7 @@ export function initializeLibraryConnection(notify: (message: string) => void): 
     disconnectButton.hidden = !handle;
     disconnectButton.disabled = busy;
     document.querySelector<HTMLButtonElement>("#confirm-disconnect")!.disabled = busy;
+    onChange({ state, handle, revision, busy });
   }
 
   async function inspectFolder(permission: PermissionState): Promise<void> {
@@ -58,6 +69,7 @@ export function initializeLibraryConnection(notify: (message: string) => void): 
     try {
       await checkFolderAvailable(handle!);
       state = "connected";
+      revision++;
     } catch (error) {
       console.warn("Unable to access library folder", error);
       // Permission can change after the initial query.
@@ -76,11 +88,14 @@ export function initializeLibraryConnection(notify: (message: string) => void): 
       const selected = await chooseFolder();
       if (!selected) return;
       handle = selected;
+      state = "restoring";
+      render();
       try { await inspectFolder(await checkReadPermission(handle)); }
       catch (error) {
         console.warn("Unable to check selected library folder", error);
         state = "unavailable";
       }
+      render();
       try {
         await saveFolder(handle);
         storageMessage = "";
@@ -99,6 +114,7 @@ export function initializeLibraryConnection(notify: (message: string) => void): 
     if (!handle || busy) return;
     busy = true;
     actionMessage = "";
+    state = "permission";
     render();
     try {
       // Permission is requested only from this click handler.
@@ -135,9 +151,20 @@ export function initializeLibraryConnection(notify: (message: string) => void): 
     } finally { busy = false; render(); }
   });
 
+  const controller = {
+    async reportAccessFailure(root: FileSystemDirectoryHandle, error: unknown): Promise<void> {
+      const currentRevision = revision;
+      const permission = await checkReadPermission(root).catch(() => null);
+      if (handle !== root || revision !== currentRevision || state !== "connected") return;
+      if (permission === "denied") state = "denied";
+      else if (permission === "prompt") state = "permission";
+      else if (error instanceof DOMException && ["NotAllowedError", "SecurityError"].includes(error.name)) state = "permission";
+      else state = "unavailable";
+      render();
+    },
+  };
   render();
-  if (state === "unsupported") return;
-  void (async () => {
+  if (state !== "unsupported") void (async () => {
     try {
       handle = await getSavedFolder();
       if (handle) {
@@ -150,4 +177,5 @@ export function initializeLibraryConnection(notify: (message: string) => void): 
       storageMessage = "Saved folder storage is unavailable. You can still choose a folder for this session.";
     } finally { render(); }
   })();
+  return controller;
 }

@@ -1,6 +1,7 @@
 import "./styles.css";
 import { registerSW } from "virtual:pwa-register";
 import { initializeLibraryConnection } from "./library/connection";
+import { initializeLibraryView } from "./library/library-view";
 
 type ViewName = "library" | "reader" | "settings";
 
@@ -11,6 +12,7 @@ const navigationButtons = Array.from(
 const toast = document.querySelector<HTMLDivElement>("#toast");
 
 function showView(name: ViewName): void {
+  libraryView.resetDetail();
   views.forEach((view) => {
     view.hidden = view.dataset.view !== name;
   });
@@ -34,10 +36,6 @@ document.querySelector("#continue-button")?.addEventListener("click", () => {
   showView("reader");
 });
 
-document.querySelectorAll<HTMLButtonElement>(".comic-card").forEach((card) => {
-  card.addEventListener("click", () => showView("reader"));
-});
-
 const zoomRange = document.querySelector<HTMLInputElement>("#zoom-range");
 const zoomOutput = document.querySelector<HTMLOutputElement>("#zoom-output");
 const pages = document.querySelector<HTMLDivElement>("#pages");
@@ -56,46 +54,6 @@ document.querySelector("#fit-width-button")?.addEventListener("click", () => {
   setZoom(100);
 });
 
-const searchInput = document.querySelector<HTMLInputElement>("#library-search");
-const sortSelect = document.querySelector<HTMLSelectElement>("#library-sort");
-const comicGrid = document.querySelector<HTMLDivElement>("#comic-grid");
-const seriesCount = document.querySelector<HTMLSpanElement>("#series-count");
-const emptyMessage = document.querySelector<HTMLParagraphElement>("#empty-message");
-
-function updateLibrary(): void {
-  if (!comicGrid || !seriesCount || !emptyMessage) return;
-
-  const query = searchInput?.value.trim().toLocaleLowerCase() ?? "";
-  const cards = Array.from(comicGrid.querySelectorAll<HTMLButtonElement>(".comic-card"));
-
-  cards.sort((first, second) => {
-    const sort = sortSelect?.value;
-    if (sort === "title") {
-      return (first.dataset.title ?? "").localeCompare(second.dataset.title ?? "", undefined, {
-        numeric: true,
-      });
-    }
-    if (sort === "progress") {
-      return Number(second.dataset.progress) - Number(first.dataset.progress);
-    }
-    return Number(second.dataset.recent) - Number(first.dataset.recent);
-  });
-
-  let visibleCount = 0;
-  cards.forEach((card) => {
-    const matches = (card.dataset.title ?? "").toLocaleLowerCase().includes(query);
-    card.hidden = !matches;
-    if (matches) visibleCount += 1;
-    comicGrid.append(card);
-  });
-
-  seriesCount.textContent = `${visibleCount} ${visibleCount === 1 ? "series" : "series"}`;
-  emptyMessage.hidden = visibleCount !== 0;
-}
-
-searchInput?.addEventListener("input", updateLibrary);
-sortSelect?.addEventListener("change", updateLibrary);
-
 function showToast(message: string): void {
   if (!toast) return;
   toast.textContent = message;
@@ -105,11 +63,11 @@ function showToast(message: string): void {
   }, 2600);
 }
 
-initializeLibraryConnection(showToast);
-
-document.querySelector("#rescan-button")?.addEventListener("click", () => {
-  showToast("Library scanning is coming in Milestone 3.");
-});
+const libraryView = initializeLibraryView(
+  () => showView("reader"),
+  (root, error) => libraryConnection.reportAccessFailure(root, error),
+);
+const libraryConnection = initializeLibraryConnection(showToast, libraryView.updateConnection);
 
 registerSW({
   onOfflineReady() {

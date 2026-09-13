@@ -20,7 +20,7 @@
           <span class="offline-status"><span aria-hidden="true"></span> Ready offline</span>
           <span class="connection-status" data-folder-status>Restoring saved folder…</span>
           <button class="button button-secondary" type="button" id="folder-button" data-folder-choose disabled>Choose library folder</button>
-          <button class="button button-secondary" type="button" id="rescan-button">Rescan</button>
+          <button class="button button-secondary" type="button" id="rescan-button" data-library-rescan disabled>Rescan</button>
         </div>
       </header>
 
@@ -35,7 +35,7 @@
           <div class="library-summary">
             <strong data-folder-name>Local library</strong>
             <span data-folder-status>Restoring saved folder…</span>
-            <span>Preview · 4 sample series</span>
+            <span data-library-summary>Preview · 4 sample series</span>
           </div>
         </aside>
 
@@ -44,7 +44,7 @@
             <div class="view-heading">
               <div>
                 <h1>Your library</h1>
-                <p>Preview library · These sample comics are not from your folder.</p>
+                <p id="library-subtitle">Preview library · These sample comics are not from your folder.</p>
               </div>
             </div>
 
@@ -57,9 +57,13 @@
               <div class="connection-actions">
                 <button class="button button-primary" type="button" data-folder-choose disabled>Choose library folder</button>
                 <button class="button button-secondary" type="button" data-folder-reconnect hidden>Reconnect folder</button>
+                <button class="button button-secondary" type="button" data-library-rescan disabled>Rescan</button>
               </div>
             </section>
 
+            <p id="scan-status" class="scan-status" role="status" aria-live="polite" aria-atomic="true">Restoring folder connection…</p>
+
+            <div id="library-overview">
             <div class="library-tools">
               <label class="search-field">
                 <span class="visually-hidden">Search library</span>
@@ -69,9 +73,8 @@
               <label>
                 <span class="visually-hidden">Sort library</span>
                 <select id="library-sort">
-                  <option value="recent">Recently read</option>
                   <option value="title">Title</option>
-                  <option value="progress">Progress</option>
+                  <option value="chapters">Chapter count</option>
                 </select>
               </label>
             </div>
@@ -90,30 +93,30 @@
             </article>
 
             <div class="section-heading">
-              <h2>Preview series</h2>
+              <h2 id="series-heading">Preview series</h2>
               <span id="series-count">4 series</span>
             </div>
 
             <div class="comic-grid" id="comic-grid">
-              <button class="comic-card" type="button" data-title="Skybound Archive" data-progress="64" data-recent="4">
+              <button class="comic-card" type="button" data-title="Skybound Archive" data-chapters="24">
                 <span class="cover-placeholder cover-one" aria-hidden="true"><span>SA</span></span>
                 <strong>Skybound Archive</strong>
                 <span>12 of 24 chapters</span>
               </button>
 
-              <button class="comic-card" type="button" data-title="Glass City" data-progress="100" data-recent="3">
+              <button class="comic-card" type="button" data-title="Glass City" data-chapters="8">
                 <span class="cover-placeholder cover-two" aria-hidden="true"><span>GC</span></span>
                 <strong>Glass City</strong>
                 <span>Completed · 8 chapters</span>
               </button>
 
-              <button class="comic-card" type="button" data-title="The Last Signal" data-progress="30" data-recent="2">
+              <button class="comic-card" type="button" data-title="The Last Signal" data-chapters="10">
                 <span class="cover-placeholder cover-three" aria-hidden="true"><span>LS</span></span>
                 <strong>The Last Signal</strong>
                 <span>3 unread chapters</span>
               </button>
 
-              <button class="comic-card" type="button" data-title="Witchlight" data-progress="0" data-recent="1">
+              <button class="comic-card" type="button" data-title="Witchlight" data-chapters="17">
                 <span class="cover-placeholder cover-four" aria-hidden="true"><span>W</span></span>
                 <strong>Witchlight</strong>
                 <span>Unread · 17 chapters</span>
@@ -121,6 +124,14 @@
             </div>
 
             <p class="empty-message" id="empty-message" hidden>No series match that search.</p>
+            </div>
+
+            <section id="series-detail" aria-labelledby="series-title" hidden>
+              <button class="button button-secondary" type="button" id="back-to-library">← Back to library</button>
+              <h2 id="series-title" tabindex="-1"></h2>
+              <p id="chapter-count"></p>
+              <ol class="chapter-list" id="chapter-list"></ol>
+            </section>
           </section>
 
           <section class="view reader-view" data-view="reader" hidden>
@@ -193,6 +204,7 @@
                   <strong data-folder-name>Local library</strong>
                   <span class="connection-status" data-folder-status>Restoring saved folder…</span>
                   <p data-folder-description>Checking the saved folder without requesting permission.</p>
+                  <p data-library-summary>Preview · 4 sample series</p>
                   <div class="connection-actions">
                     <button class="button button-secondary full-width" type="button" id="settings-folder-button" data-folder-choose disabled>Choose library folder</button>
                     <button class="button button-secondary full-width" type="button" data-folder-reconnect hidden>Reconnect folder</button>
@@ -200,10 +212,7 @@
                   </div>
                 </div>
 
-                <label class="setting-row">
-                  <span><strong>Scan on launch</strong><small>Coming in Milestone 3</small></span>
-                  <input type="checkbox" disabled>
-                </label>
+                <p class="scan-status">The library is scanned automatically when this folder connects or restores.</p>
               </section>
             </div>
           </section>

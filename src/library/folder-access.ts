@@ -22,5 +22,5 @@ export function requestReadPermission(handle: FileSystemDirectoryHandle): Promis
 
 // Resolving the folder against itself checks availability without enumerating files.
 export async function checkFolderAvailable(handle: FileSystemDirectoryHandle): Promise<void> {
-  if (await handle.resolve(handle) === null) throw new Error("Folder is unavailable.");
+  if (await handle.resolve(handle) === null) throw new DOMException("Folder is unavailable.", "NotFoundError");
 }

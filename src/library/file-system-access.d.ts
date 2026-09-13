@@ -6,3 +6,7 @@ interface FileSystemHandle {
 interface Window {
   showDirectoryPicker?: (options: { mode: "read" }) => Promise<FileSystemDirectoryHandle>;
 }
+
+interface FileSystemDirectoryHandle {
+  values(): AsyncIterableIterator<FileSystemDirectoryHandle | FileSystemFileHandle>;
+}

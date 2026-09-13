@@ -350,6 +350,8 @@ input[type="search"] {
   padding: 0;
   background: transparent;
   text-align: left;
+  min-width: 0;
+  overflow-wrap: anywhere;
 }
 
 .comic-card:hover .cover-placeholder {
@@ -575,6 +577,39 @@ input[type="search"] {
 .connection-panel p {
   margin: 0.5rem 0 1rem;
   color: var(--muted);
+}
+
+.scan-status,
+#chapter-count {
+  color: var(--muted);
+  overflow-wrap: anywhere;
+}
+
+#series-title {
+  margin: 1.5rem 0 0.5rem;
+  font-size: 1.5rem;
+  overflow-wrap: anywhere;
+}
+
+#series-title:focus-visible {
+  outline: 3px solid rgba(245, 194, 95, 0.45);
+  outline-offset: 2px;
+}
+
+.chapter-list {
+  padding-left: 2rem;
+  border: 1px solid var(--line);
+  border-radius: 0.75rem;
+  background: var(--panel);
+}
+
+.chapter-list li {
+  padding: 0.9rem 0.75rem;
+  overflow-wrap: anywhere;
+}
+
+.chapter-list li + li {
+  border-top: 1px solid var(--line);
 }
 
 .connection-status {
