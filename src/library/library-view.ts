@@ -1,3 +1,5 @@
+import type { ReadingData } from "../storage/reading-data";
+import { seriesProgress, type ReadingProgress } from "../storage/reading-progress";
 import type { LibraryConnection } from "./connection";
 import { checkFolderAvailable, checkReadPermission } from "./folder-access";
 import { scanLibrary, type ComicChapter, type ComicSeries, type LibraryScan } from "./library-scanner";
@@ -8,7 +10,8 @@ const count = (value: number, noun: string): string => `${value} ${noun}${value 
 export function initializeLibraryView(
   openPreview: () => void,
   reportAccessFailure: (root: FileSystemDirectoryHandle, error: unknown) => Promise<void>,
-  openChapter: (series: ComicSeries, chapter: ComicChapter) => void,
+  openChapter: (series: ComicSeries, chapter: ComicChapter, position?: ReadingProgress) => void,
+  data: ReadingData,
 ): { updateConnection: (connection: LibraryConnection) => void; resetDetail: () => void; returnToSeries: (series: ComicSeries, chapter: ComicChapter) => void } {
   const grid = document.querySelector<HTMLDivElement>("#comic-grid")!;
   const samples = Array.from(grid.querySelectorAll<HTMLButtonElement>(".comic-card"));
@@ -33,12 +36,15 @@ export function initializeLibraryView(
   let abort: AbortController | null = null;
   let scanning = false;
   let result: LibraryScan | null = null;
+  let detailSeries: ComicSeries | null = null;
+  let continuation: { series: ComicSeries; chapter: ComicChapter; record: ReadingProgress } | null = null;
   let returnCard: HTMLButtonElement | null = null;
 
   function resetDetail(restoreFocus = false): void {
     const wasOpen = !detail.hidden;
     detail.hidden = true;
     overview.hidden = false;
+    detailSeries = null;
     chapterList.replaceChildren();
     detailTitle.textContent = "";
     detailCount.textContent = "";
@@ -47,6 +53,7 @@ export function initializeLibraryView(
   }
 
   function openSeries(series: ComicSeries, card: HTMLButtonElement | null): void {
+    detailSeries = series;
     returnCard = card;
     overview.hidden = true;
     detail.hidden = false;
@@ -58,12 +65,14 @@ export function initializeLibraryView(
       button.type = "button";
       button.className = "chapter-button";
       button.textContent = chapter.displayName;
+      const state = document.createElement("span"); state.className = "chapter-state"; button.append(state);
       button.dataset.chapterId = chapter.id;
       button.addEventListener("click", () => openChapter(series, chapter));
       row.append(button);
       return row;
     });
     chapterList.replaceChildren(...rows);
+    refreshProgress();
     detailTitle.focus();
   }
 
@@ -71,6 +80,7 @@ export function initializeLibraryView(
     const card = document.createElement("button");
     card.type = "button";
     card.className = "comic-card";
+    card.dataset.seriesId = series.id;
     const cover = document.createElement("span");
     // Deterministic palette selection, independent of scan order.
     let hash = 0;
@@ -84,7 +94,8 @@ export function initializeLibraryView(
     title.textContent = series.name;
     const chapters = document.createElement("span");
     chapters.textContent = count(series.chapters.length, "chapter");
-    card.append(cover, title, chapters);
+    const progress = document.createElement("span"); progress.className = "series-progress";
+    card.append(cover, title, chapters, progress);
     card.addEventListener("click", () => openSeries(series, card));
     return card;
   }
@@ -120,7 +131,43 @@ export function initializeLibraryView(
     emptySearch.textContent = "No series match your search. Try another name or clear the search.";
     const summary = real ? result ? `${result.series.length} series · ${count(result.chapterCount, "chapter")}` : "Library not scanned yet" : "Preview · 4 sample series";
     document.querySelectorAll<HTMLElement>("[data-library-summary]").forEach(element => element.textContent = summary);
+    refreshProgress();
   }
+
+  function refreshProgress(): void {
+    const records = root ? data.all(root.name) : [];
+    continuation = null;
+    if (root && result) {
+      for (const record of [...records].sort((a, b) => b.updatedAt - a.updatedAt)) {
+        const series = result.series.find(s => s.id === record.seriesId);
+        const chapter = series?.chapters.find(c => c.id === record.chapterId);
+        if (series && chapter) { continuation = { series, chapter, record }; break; }
+      }
+      for (const card of grid.querySelectorAll<HTMLElement>("[data-series-id]")) {
+        const series = result.series.find(s => s.id === card.dataset.seriesId)!;
+        const progress = seriesProgress(series, records);
+        card.querySelector<HTMLElement>(".series-progress")!.textContent = `${progress.state} ? ${progress.percent}%`;
+      }
+      if (detailSeries) for (const button of chapterList.querySelectorAll<HTMLElement>("[data-chapter-id]")) {
+        const record = records.find(r => r.seriesId === detailSeries!.id && r.chapterId === button.dataset.chapterId);
+        button.querySelector<HTMLElement>(".chapter-state")!.textContent = record?.completed ? "Completed" : record ? "Reading" : "Unread";
+      }
+    }
+    continuePanel.hidden = Boolean(root) && !continuation;
+    continuePanel.querySelector<HTMLElement>(".eyebrow")!.textContent = root ? "Continue reading" : "Preview ? Continue reading";
+    continuePanel.querySelector("h2")!.textContent = continuation?.series.name ?? "Skybound Archive";
+    continuePanel.querySelector("p")!.textContent = continuation ? `${continuation.chapter.displayName} ? Page ${Math.min(continuation.record.pageIndex + 1, continuation.record.pageCount)} of ${continuation.record.pageCount}` : "Chapter 12 ? Page 18 of 26";
+    const percent = continuation ? seriesProgress(continuation.series, records).percent : 64;
+    const bar = continuePanel.querySelector<HTMLElement>("[role=progressbar]")!;
+    bar.setAttribute("aria-label", `${continuation?.series.name ?? "Skybound Archive"} reading progress`);
+    bar.setAttribute("aria-valuenow", String(percent));
+    bar.querySelector<HTMLElement>(".progress-value")!.style.width = `${percent}%`;
+  }
+  data.subscribe(refreshProgress);
+  document.querySelector("#continue-button")!.addEventListener("click", () => {
+    if (continuation && root && result) openChapter(continuation.series, continuation.chapter, continuation.record);
+    else if (!root) openPreview();
+  });
 
   function updateButtons(): void {
     rescanButtons.forEach(button => button.disabled = !root || scanning || connection.busy);

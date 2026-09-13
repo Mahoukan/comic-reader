@@ -2,7 +2,7 @@ const DATABASE = "comic-reader";
 const STORE = "library";
 const KEY = "folder";
 
-function openDatabase(): Promise<IDBDatabase> {
+export function openDatabase(): Promise<IDBDatabase> {
   return new Promise((resolve, reject) => {
     let finished = false;
     const timer = window.setTimeout(() => fail(new Error("IndexedDB open timed out.")), 5000);
@@ -13,9 +13,11 @@ function openDatabase(): Promise<IDBDatabase> {
       reject(error);
     }
     try {
-      const request = indexedDB.open(DATABASE, 1);
+      const request = indexedDB.open(DATABASE, 2);
       request.onupgradeneeded = () => {
-        if (!request.result.objectStoreNames.contains(STORE)) request.result.createObjectStore(STORE);
+        for (const name of [STORE, "progress", "preferences"]) {
+          if (!request.result.objectStoreNames.contains(name)) request.result.createObjectStore(name);
+        }
       };
       request.onblocked = () => fail(new Error("IndexedDB is blocked by another tab."));
       request.onerror = () => fail(request.error);
@@ -31,11 +33,11 @@ function openDatabase(): Promise<IDBDatabase> {
   });
 }
 
-async function operate<T>(mode: IDBTransactionMode, action: (store: IDBObjectStore) => IDBRequest<T>): Promise<T> {
+export async function operate<T>(mode: IDBTransactionMode, action: (store: IDBObjectStore) => IDBRequest<T>, storeName = STORE): Promise<T> {
   const database = await openDatabase();
   try {
     return await new Promise<T>((resolve, reject) => {
-      const transaction = database.transaction(STORE, mode);
+      const transaction = database.transaction(storeName, mode);
       const timer = window.setTimeout(() => {
         reject(new Error("IndexedDB transaction timed out."));
         transaction.abort();
@@ -45,7 +47,7 @@ async function operate<T>(mode: IDBTransactionMode, action: (store: IDBObjectSto
         reject(transaction.error ?? new Error("IndexedDB transaction failed."));
       };
       try {
-        const request = action(transaction.objectStore(STORE));
+        const request = action(transaction.objectStore(storeName));
         transaction.oncomplete = () => {
           window.clearTimeout(timer);
           resolve(request.result);

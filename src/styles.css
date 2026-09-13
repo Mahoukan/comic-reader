@@ -490,7 +490,7 @@ input[type="search"] {
   max-width: calc(100% - 2rem);
   margin: 0 auto;
   padding: 1.5rem 0 3rem;
-  transition: width 160ms ease;
+
   overflow-anchor: none;
 }
 
@@ -895,3 +895,18 @@ dialog::backdrop {
     transition-duration: 0.01ms !important;
   }
 }
+
+/* Reader preferences affect the reading surface, including page placeholders. */
+.real-comic-page { margin-bottom: var(--page-gap, 0px); }
+.reader-view[data-background="black"] { --reader: #000; }
+.reader-view[data-background="dark"] { --reader: #191c22; }
+.reader-view[data-background="light"] { --reader: #f3f4f6; --text: #17202d; --muted: #465367; }
+.reader-view[data-background="light"] .real-comic-page:not(.loaded) { background: #e4e7ec; color: #17202d; }
+.reader-view[data-background="light"] .reader-toolbar { color: #edf0f5; --text: #edf0f5; --muted: #b9c0ce; }
+.chapter-state { float: right; margin-left: 1rem; font-size: .85rem; color: var(--muted); }
+.series-progress { color: var(--muted); font-size: .85rem; }
+.storage-warning { padding: 1rem; border: 1px solid #ac8641; color: #f5dca9; }
+
+.reader-view[data-background="light"] .button-secondary { color: #f5f7fa; }
+
+.reader-view { color: var(--text); }

@@ -1,3 +1,5 @@
+import type { ReadingData } from "../storage/reading-data";
+import type { ReadingProgress } from "../storage/reading-progress";
 import type { ComicChapter, ComicSeries } from "../library/library-scanner";
 import { ArchiveError } from "./archive-safety";
 import type { ComicPage } from "./cbz-reader";
@@ -33,6 +35,8 @@ export function initializeReaderView(
   backToSeries: (series: ComicSeries, chapter: ComicChapter) => void,
   backToLibrary: () => void,
   permissionLost: (error: unknown) => void,
+  data: ReadingData,
+  libraryName: () => string | null,
 ) {
   const pagesElement = document.querySelector<HTMLElement>("#pages")!;
   const title = document.querySelector<HTMLElement>("#reader-series-name")!;
@@ -47,6 +51,44 @@ export function initializeReaderView(
   const pageTargets = new Map<Element, { section: ChapterSection; slot: PageSlot }>();
   const endTargets = new Map<Element, ChapterSection>();
   let session: ReadingSession | null = null;
+  let saveTimer = 0;
+  let pending: Omit<ReadingProgress, "updatedAt"> | null = null;
+  let restore: ReadingProgress | undefined;
+  let restoring = false;
+  function flushProgress(): void {
+    window.clearTimeout(saveTimer); saveTimer = 0;
+    if (pending) { const record = pending; pending = null; data.save(record); }
+  }
+  function capture(completed = false, view = session ? sections.get(session.currentIndex) : undefined): void {
+    if (!session || restoring || !view?.slots.length) return;
+    const name = libraryName(); if (!name) return;
+    const line = readingLine();
+    const distance = (item: PageSlot): number => { const r = item.container.getBoundingClientRect(); return Math.max(r.top - line, line - r.bottom, 0); };
+    const slot = view.slots.reduce((best, value) => distance(value) < distance(best) ? value : best);
+    const rect = slot.container.getBoundingClientRect();
+    const offsetRatio = Math.round(Math.max(0, Math.min(1, (line - rect.top) / Math.max(1, rect.height))) * 1000) / 1000;
+    const record = { libraryName: name, seriesId: session.series.id, seriesName: session.series.name,
+      chapterId: view.chapter.chapter.id, chapterName: view.chapter.chapter.displayName,
+      pageIndex: slot.number - 1, pageCount: view.slots.length, offsetRatio, completed };
+    if (pending && JSON.stringify(pending) === JSON.stringify(record)) return;
+    const previous = data.all(name).find(r => r.seriesId === record.seriesId && r.chapterId === record.chapterId);
+    if (!pending && previous && previous.pageCount === record.pageCount && previous.pageIndex === record.pageIndex && previous.offsetRatio === offsetRatio && (!completed || previous.completed)) return;
+    pending = record; window.clearTimeout(saveTimer);
+    saveTimer = window.setTimeout(flushProgress, 700);
+    if (completed) flushProgress();
+  }
+  function applyPreferences(): void {
+    const prefs = data.preferences; setZoom(prefs.zoom);
+    automatic.checked = readerAutomatic.checked = prefs.automaticContinuation;
+    pagesElement.style.setProperty("--page-gap", ({ none: "0px", small: "8px", medium: "24px", large: "48px" })[prefs.spacing]);
+    document.querySelector<HTMLElement>(".reader-view")!.dataset.background = prefs.background;
+    for (const view of sections.values()) if (session) updateBoundary(session, view);
+  }
+  let appliedPreferences = "";
+  data.subscribe(() => {
+    const signature = JSON.stringify(data.preferences);
+    if (signature !== appliedPreferences) { appliedPreferences = signature; applyPreferences(); }
+  });
   let pageObserver: IntersectionObserver | null = null;
   let endObserver: IntersectionObserver | null = null;
   let resizeObserver: ResizeObserver | null = null;
@@ -75,6 +117,8 @@ export function initializeReaderView(
   }
 
   function clear(): Promise<void> {
+    trackVisible(false); capture(); flushProgress();
+    restoring = false; restore = undefined;
     generation++;
     if (frame) cancelAnimationFrame(frame);
     frame = 0;
@@ -99,6 +143,7 @@ export function initializeReaderView(
   }
 
   function goBack(): void {
+    trackVisible(false);
     const previous = session;
     const chapter = previous?.currentChapter ?? startingSelection?.chapter;
     const series = previous?.series ?? startingSelection?.series;
@@ -231,7 +276,13 @@ export function initializeReaderView(
       slot.image = image;
       slot.container.append(image);
       image.src = url;
-      await image.decode();
+      await new Promise<void>((resolve, reject) => {
+        const signal = view.chapter.controller.signal;
+        const abort = (): void => reject(new DOMException("Chapter closed", "AbortError"));
+        if (signal.aborted) { abort(); return; }
+        signal.addEventListener("abort", abort, { once: true });
+        void image.decode().then(resolve, reject).finally(() => signal.removeEventListener("abort", abort));
+      });
       if (!current()) return;
       const anchor = readingAnchor();
       const before = anchor?.getBoundingClientRect().top ?? null;
@@ -241,6 +292,7 @@ export function initializeReaderView(
       slot.container.classList.add("loaded");
       // A queued page above the reading line may change height after decoding.
       preserveAnchor(anchor, before);
+      if (restoring && restore && view.chapter.index === active.startIndex && slot.number - 1 === Math.min(restore.pageIndex, view.slots.length - 1)) finishRestore(slot, false);
       scheduleTracking();
     } catch (error) {
       if (url) active.revokeURL(view.chapter, url);
@@ -252,6 +304,7 @@ export function initializeReaderView(
       slot.retry.hidden = false;
       status.textContent = `${view.chapter.chapter.displayName}: page ${slot.number} could not be loaded. Retry is available.`;
       // The connection controller checks actual root permission before disconnecting anything.
+      if (restoring && restore && view.chapter.index === active.startIndex && slot.number - 1 === Math.min(restore.pageIndex, view.slots.length - 1)) finishRestore(slot, true);
       permissionLost(error);
     } finally { if (current()) slot.container.setAttribute("aria-busy", "false"); }
   }
@@ -270,6 +323,7 @@ export function initializeReaderView(
         button("Retry chapter", () => { if (session === active) void active.retry(chapter); }),
         button("Back to series", goBack));
       view.boundary.replaceChildren();
+      restoring = false; restore = undefined;
       status.textContent = message.textContent;
       if (error instanceof DOMException && ["NotAllowedError", "SecurityError"].includes(error.name)) permissionLost(error);
       return;
@@ -290,12 +344,17 @@ export function initializeReaderView(
     });
     view.content.replaceChildren(...view.slots.map(slot => slot.container));
     if (!view.slots.length) view.content.textContent = "This chapter contains no supported image pages.";
+    if (restoring && restore && chapter.index === active.startIndex) {
+      const target = view.slots[Math.min(restore.pageIndex, view.slots.length - 1)];
+      if (target) { positionRestore(target); enqueue(active, view, target); }
+      else { restoring = false; restore = undefined; status.textContent = "Saved position could not be restored: this chapter has no image pages."; }
+    }
     if (pageObserver) view.slots.forEach(slot => pageObserver!.observe(slot.container));
     else view.slots.forEach(slot => { slot.retry.textContent = `Load page ${slot.number}`; slot.retry.hidden = false; });
     endTargets.set(view.end, view);
     endObserver?.observe(view.end);
     updateBoundary(active, view);
-    if (chapter.index === active.currentIndex) status.textContent = `${chapter.chapter.displayName} · ${archive.pages.length} pages. Scroll to read.`;
+    if (!restoring && chapter.index === active.currentIndex) status.textContent = `${chapter.chapter.displayName} · ${archive.pages.length} pages. Scroll to read.`;
     scheduleTracking();
   }
 
@@ -304,9 +363,9 @@ export function initializeReaderView(
     frame = requestAnimationFrame(() => { frame = 0; trackVisible(); });
   }
 
-  function trackVisible(): void {
+  function trackVisible(prepare = true): void {
     const active = session;
-    if (!active) return;
+    if (!active || restoring) return;
     const line = readingLine();
     const distance = (element: HTMLElement): number => {
       const rect = element.getBoundingClientRect();
@@ -320,31 +379,50 @@ export function initializeReaderView(
       // An 80px dead band prevents labels/resources thrashing at a boundary.
       if (forward ? line < candidate.section.getBoundingClientRect().top + 80 : line > currentView.section.getBoundingClientRect().top - 80) candidate = currentView;
     }
+    if (candidate && candidate.chapter.index > active.currentIndex && currentView) capture(true, currentView);
+    if (candidate && candidate.chapter.index !== active.currentIndex) flushProgress();
     if (candidate) active.setCurrent(candidate.chapter.index);
     const visible = sections.get(active.currentIndex);
     if (!visible?.chapter.archive) return;
     const page = visible.slots.reduce<PageSlot | null>((best, slot) => !best || distance(slot.container) < distance(best.container) ? slot : best, null);
     const label = `${active.currentChapter.displayName} · ${page ? `Page ${page.number} of ${visible.slots.length}` : "No image pages"}`;
     if (chapterName.textContent !== label) chapterName.textContent = label;
+    capture();
     const endRect = visible.end.getBoundingClientRect();
-    if (automatic.checked && endRect.top <= window.innerHeight * 2 && endRect.bottom >= 0) void active.prepareNext(active.currentIndex);
-    if (active.currentIndex === active.series.chapters.length - 1 && endRect.top < window.innerHeight && !endedSeries) {
+    if (prepare && automatic.checked && endRect.top <= window.innerHeight * 2 && endRect.bottom >= 0) void active.prepareNext(active.currentIndex);
+    if (active.currentIndex === active.series.chapters.length - 1 && endRect.top >= Math.max(0, document.querySelector<HTMLElement>(".reader-toolbar")!.getBoundingClientRect().bottom) && endRect.bottom <= window.innerHeight - 64 && !endedSeries) {
+      capture(true);
       endedSeries = true;
       status.textContent = `End of ${active.currentChapter.displayName}. End of series.`;
     }
   }
 
-  function open(series: ComicSeries, chapter: ComicChapter): void {
+  function positionRestore(slot: PageSlot): void {
+    if (!restore) return;
+    for (let i = 0; i < 2; i++) {
+      const rect = slot.container.getBoundingClientRect();
+      window.scrollBy({ top: rect.top + rect.height * restore.offsetRatio - readingLine(), behavior: "instant" });
+    }
+  }
+  function finishRestore(slot: PageSlot, failed: boolean): void {
+    if (session) chapterName.textContent = `${session.currentChapter.displayName} ? Page ${slot.number} of ${sections.get(session.currentIndex)!.slots.length}`;
+
+    status.textContent = failed ? "Saved page could not be loaded. Position restored to its placeholder; Retry is available." : `Reading position restored: page ${slot.number}.`;
+    positionRestore(slot); restoring = false; restore = undefined;
+    scheduleTracking();
+  }
+  function open(series: ComicSeries, chapter: ComicChapter, position?: ReadingProgress): void {
     if (destroyed) return;
     void clear();
+    restore = position; restoring = Boolean(position);
     const operation = generation;
     openingSelection = true;
     startingSelection = { series, chapter };
     title.textContent = series.name;
     chapterName.textContent = chapter.displayName;
     backButton.textContent = "← Back to series";
-    status.textContent = "Opening chapter…";
-    setZoom(100);
+    status.textContent = restoring ? "Restoring reading position..." : "Opening chapter...";
+    applyPreferences();
     backButton.focus();
     transition = transition.then(async () => {
       if (generation !== operation) return;
@@ -368,7 +446,7 @@ export function initializeReaderView(
           }
         }, { rootMargin: margin });
         endObserver = new IntersectionObserver(entries => {
-          if (session !== active || !automatic.checked) return;
+          if (session !== active || restoring || !automatic.checked) return;
           for (const entry of entries) {
             const view = endTargets.get(entry.target);
             if (entry.isIntersecting && view) void active.prepareNext(view.chapter.index);
@@ -388,7 +466,7 @@ export function initializeReaderView(
   function preview(): void {
     if (destroyed) return;
     void clear();
-    setZoom(100);
+    applyPreferences();
     title.textContent = "Skybound Archive · Preview";
     chapterName.textContent = "Sample pages · No local chapter open";
     status.textContent = "Preview reader. Choose a real chapter from a connected library.";
@@ -399,12 +477,12 @@ export function initializeReaderView(
     }
   }
 
-  const onZoom = (): void => setZoom(Number(zoom.value));
-  const fitWidth = (): void => setZoom(100);
+  const onZoom = (): void => data.setPreferences({ zoom: Number(zoom.value) });
+  const fitWidth = (): void => data.setPreferences({ zoom: 100 });
   const libraryAction = (): void => { void clear(); backToLibrary(); };
   const continuationChanged = (event: Event): void => {
     const enabled = (event.currentTarget as HTMLInputElement).checked;
-    automatic.checked = readerAutomatic.checked = enabled;
+    data.setPreferences({ automaticContinuation: enabled });
     if (!session) return;
     for (const view of sections.values()) updateBoundary(session, view);
     scheduleTracking();
@@ -417,7 +495,9 @@ export function initializeReaderView(
   readerAutomatic.addEventListener("change", continuationChanged);
   window.addEventListener("scroll", scheduleTracking, { passive: true });
   window.addEventListener("resize", scheduleTracking);
-  const onPageHide = (event: PageTransitionEvent): void => { if (event.persisted) void clear(); else destroy(); };
+  const onHidden = (): void => { if (document.visibilityState === "hidden") { capture(); flushProgress(); data.flushPreferences(); } };
+  document.addEventListener("visibilitychange", onHidden);
+  const onPageHide = (event: PageTransitionEvent): void => { data.flushPreferences(); if (event.persisted) void clear(); else destroy(); };
   const destroy = (): void => {
     destroyed = true;
     void clear();
@@ -430,8 +510,9 @@ export function initializeReaderView(
     window.removeEventListener("scroll", scheduleTracking);
     window.removeEventListener("resize", scheduleTracking);
     window.removeEventListener("pagehide", onPageHide);
+    document.removeEventListener("visibilitychange", onHidden);
   };
   window.addEventListener("pagehide", onPageHide);
-  setZoom(100);
-  return { open, preview, close: clear, destroy, isOpen: () => session !== null || openingSelection };
+  applyPreferences();
+  return { open, preview, close: clear, destroy, resetReadingData: () => { window.clearTimeout(saveTimer); pending = null; }, isOpen: () => session !== null || openingSelection };
 }

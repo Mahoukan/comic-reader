@@ -40,6 +40,7 @@
         </aside>
 
         <main class="main-content">
+          <p id="storage-warning" class="storage-warning" role="status" hidden></p>
           <section class="view" data-view="library">
             <div class="view-heading">
               <div>
@@ -151,6 +152,8 @@
                   <input id="zoom-range" type="range" min="60" max="140" value="100">
                 </label>
                 <button class="button button-secondary" type="button" id="fit-width-button">Fit width</button>
+                <label>Page spacing <select data-preference="spacing"><option value="none">None</option><option value="small">Small</option><option value="medium">Medium</option><option value="large">Large</option></select></label>
+                <label>Background <select data-preference="background"><option value="black">Black</option><option value="dark">Dark</option><option value="light">Light</option></select></label>
                 <label class="continuation-control"><input id="reader-automatic-continuation" type="checkbox" checked> Continue automatically</label>
               </div>
             </div>
@@ -173,10 +176,13 @@
 
                 <p class="scan-status">Chapters open in vertical scroll. Zoom and Fit width are available in the reader.</p>
                 <label class="setting-row">
-                  <span><strong>Automatically continue</strong><small>Prepare the following chapter near the end. Applies to this session; preferences are not saved yet.</small></span>
-                  <input id="automatic-continuation" type="checkbox" checked>
+                  <span><strong>Automatically continue</strong><small>Prepare the following chapter near the end. Saved on this device.</small></span>
+                  <input id="automatic-continuation" data-preference="automaticContinuation" type="checkbox" checked>
                 </label>
-                <p class="scan-status">Saved reading positions and preferences are coming in Milestone 6.</p>
+                <label class="setting-row"><span>Zoom <output id="settings-zoom-output">100%</output></span><input data-preference="zoom" type="range" min="60" max="140" value="100"></label>
+                <label class="setting-row"><span>Page spacing</span><select data-preference="spacing"><option value="none">None</option><option value="small">Small</option><option value="medium">Medium</option><option value="large">Large</option></select></label>
+                <label class="setting-row"><span>Reader background</span><select data-preference="background"><option value="black">Black</option><option value="dark">Dark</option><option value="light">Light</option></select></label>
+                <button id="clear-reading-button" class="button button-secondary" type="button">Clear reading data</button>
               </section>
 
               <section class="settings-panel">
@@ -214,6 +220,11 @@
         <button class="button button-secondary" type="button" id="cancel-disconnect" autofocus>Cancel</button>
         <button class="button button-primary" type="button" id="confirm-disconnect">Disconnect folder</button>
       </div>
+    </dialog>
+    <dialog id="clear-reading-dialog" aria-labelledby="clear-reading-title" aria-describedby="clear-reading-description">
+      <h2 id="clear-reading-title">Clear reading data?</h2>
+      <p id="clear-reading-description">Remove saved reading positions and reset reader preferences on this device. Your library connection and comic files stay unchanged.</p>
+      <div class="connection-actions"><button id="cancel-clear-reading" class="button button-secondary" type="button" autofocus>Cancel</button><button id="confirm-clear-reading" class="button button-primary" type="button">Clear reading data</button></div>
     </dialog>
     <div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
     <script type="module" src="/src/main.ts"></script>
