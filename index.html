@@ -29,6 +29,7 @@
           <nav>
             <button class="nav-button active" type="button" data-view-target="library" aria-pressed="true">Library</button>
             <button class="nav-button" type="button" data-view-target="reader" aria-pressed="false">Reader</button>
+            <button class="nav-button" type="button" data-view-target="bookmarks" aria-pressed="false">Bookmarks</button>
             <button class="nav-button" type="button" data-view-target="settings" aria-pressed="false">Settings</button>
           </nav>
 
@@ -131,10 +132,16 @@
               <button class="button button-secondary" type="button" id="back-to-library">← Back to library</button>
               <h2 id="series-title" tabindex="-1"></h2>
               <p id="chapter-count"></p>
+              <div class="connection-actions"><button class="button button-secondary" type="button" data-series-read="true">Mark series read</button><button class="button button-secondary" type="button" data-series-read="false">Mark series unread</button></div>
               <ol class="chapter-list" id="chapter-list"></ol>
             </section>
           </section>
 
+          <section class="view" data-view="bookmarks" hidden>
+            <div class="view-heading"><div><h1 id="bookmarks-title" tabindex="-1">Bookmarks</h1><p>Saved pages from your connected library.</p></div></div>
+            <p id="bookmarks-empty">Connect a library to see its bookmarks.</p>
+            <ul id="bookmark-list" class="bookmark-list"></ul>
+          </section>
           <section class="view reader-view" data-view="reader" hidden>
             <div class="reader-toolbar">
               <div class="reader-title">
@@ -151,6 +158,7 @@
                   <span>Zoom <output id="zoom-output">100%</output></span>
                   <input id="zoom-range" type="range" min="60" max="140" value="100">
                 </label>
+                <button id="bookmark-button" class="button button-secondary" type="button" aria-pressed="false" disabled>Bookmark page</button>
                 <button class="button button-secondary" type="button" id="fit-width-button">Fit width</button>
                 <label>Page spacing <select data-preference="spacing"><option value="none">None</option><option value="small">Small</option><option value="medium">Medium</option><option value="large">Large</option></select></label>
                 <label>Background <select data-preference="background"><option value="black">Black</option><option value="dark">Dark</option><option value="light">Light</option></select></label>
@@ -165,7 +173,7 @@
           <section class="view" data-view="settings" hidden>
             <div class="view-heading">
               <div>
-                <h1>Settings</h1>
+                <h1 id="settings-title" tabindex="-1">Settings</h1>
                 <p>These preferences stay on this device.</p>
               </div>
             </div>
@@ -182,6 +190,11 @@
                 <label class="setting-row"><span>Zoom <output id="settings-zoom-output">100%</output></span><input data-preference="zoom" type="range" min="60" max="140" value="100"></label>
                 <label class="setting-row"><span>Page spacing</span><select data-preference="spacing"><option value="none">None</option><option value="small">Small</option><option value="medium">Medium</option><option value="large">Large</option></select></label>
                 <label class="setting-row"><span>Reader background</span><select data-preference="background"><option value="black">Black</option><option value="dark">Dark</option><option value="light">Light</option></select></label>
+                <h3>Local reading backup</h3>
+                <p id="backup-explanation" class="scan-status">Connect a library to back up its reading data.</p>
+                <div class="connection-actions"><button id="export-reading-button" class="button button-secondary" type="button" disabled>Export reading data</button><button id="import-reading-button" class="button button-secondary" type="button" disabled>Import reading data</button></div>
+                <input id="reading-backup-file" type="file" accept=".json,application/json" hidden aria-label="Choose one reading backup JSON file">
+                <p id="backup-error" role="alert" hidden></p>
                 <button id="clear-reading-button" class="button button-secondary" type="button">Clear reading data</button>
               </section>
 
@@ -209,7 +222,8 @@
       <nav class="mobile-nav" aria-label="Primary navigation">
         <button class="nav-button active" type="button" data-view-target="library" aria-pressed="true">Library</button>
         <button class="nav-button" type="button" data-view-target="reader" aria-pressed="false">Reader</button>
-        <button class="nav-button" type="button" data-view-target="settings" aria-pressed="false">Settings</button>
+        <button class="nav-button" type="button" data-view-target="bookmarks" aria-pressed="false">Bookmarks</button>
+            <button class="nav-button" type="button" data-view-target="settings" aria-pressed="false">Settings</button>
       </nav>
     </div>
 
@@ -223,8 +237,17 @@
     </dialog>
     <dialog id="clear-reading-dialog" aria-labelledby="clear-reading-title" aria-describedby="clear-reading-description">
       <h2 id="clear-reading-title">Clear reading data?</h2>
-      <p id="clear-reading-description">Remove saved reading positions and reset reader preferences on this device. Your library connection and comic files stay unchanged.</p>
+      <p id="clear-reading-description">Remove all saved progress, bookmarks, manual read states, and reader preferences on this device. Your library connection and comic files stay unchanged.</p>
       <div class="connection-actions"><button id="cancel-clear-reading" class="button button-secondary" type="button" autofocus>Cancel</button><button id="confirm-clear-reading" class="button button-primary" type="button">Clear reading data</button></div>
+    </dialog>
+    <dialog id="series-state-dialog" aria-labelledby="series-state-title" aria-describedby="series-state-description">
+      <h2 id="series-state-title">Change series reading state?</h2><p id="series-state-description"></p>
+      <div class="connection-actions"><button id="cancel-series-state" class="button button-secondary" type="button" autofocus>Cancel</button><button id="confirm-series-state" class="button button-primary" type="button">Confirm</button></div>
+    </dialog>
+    <dialog id="import-reading-dialog" aria-labelledby="import-reading-title" aria-describedby="import-reading-summary">
+      <h2 id="import-reading-title">Replace reading data?</h2><p id="import-reading-summary"></p>
+      <label id="library-mismatch-label" class="setting-row" hidden><input id="confirm-library-mismatch" type="checkbox"><span>I confirm importing data from a different library name. Matching still requires exact series and chapter identifiers; renamed chapters are not guessed.</span></label>
+      <div class="connection-actions"><button id="cancel-import-reading" class="button button-secondary" type="button" autofocus>Cancel</button><button id="confirm-import-reading" class="button button-primary" type="button" disabled>Replace reading data</button></div>
     </dialog>
     <div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
     <script type="module" src="/src/main.ts"></script>

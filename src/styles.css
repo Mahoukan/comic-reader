@@ -871,7 +871,7 @@ dialog::backdrop {
     left: 0;
     z-index: 20;
     display: grid;
-    grid-template-columns: repeat(3, 1fr);
+    grid-template-columns: repeat(4, minmax(0, 1fr));
     padding: 0.45rem;
     background: rgba(24, 27, 31, 0.97);
     border-top: 1px solid var(--line);
@@ -910,3 +910,12 @@ dialog::backdrop {
 .reader-view[data-background="light"] .button-secondary { color: #f5f7fa; }
 
 .reader-view { color: var(--text); }
+
+.chapter-actions { display: flex; gap: .5rem; flex-wrap: wrap; margin-top: .5rem; }
+.bookmark-list { list-style: none; margin: 0; padding: 0; }
+.bookmark-row { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 1rem; padding: 1rem; border: 1px solid var(--line); border-radius: .75rem; background: var(--panel); margin-bottom: .75rem; }
+.bookmark-row > div { min-width: 0; overflow-wrap: anywhere; }
+.bookmark-row p { margin-bottom: 0; color: var(--muted); }
+#backup-error { color: #ffb5aa; }
+#library-mismatch-label { align-items: flex-start; gap: .75rem; }
+@media (max-width: 600px) { .mobile-nav .nav-button { padding: .7rem .15rem; font-size: .8rem; } }

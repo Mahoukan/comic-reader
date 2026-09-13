@@ -1,5 +1,7 @@
 import type { ReadingData } from "../storage/reading-data";
-import { seriesProgress, type ReadingProgress } from "../storage/reading-progress";
+import type { ReadingProgress } from "../storage/reading-progress";
+import type { ReadingAnchor } from "../storage/bookmarks";
+import { chapterState, seriesProgress } from "../storage/reading-status";
 import type { LibraryConnection } from "./connection";
 import { checkFolderAvailable, checkReadPermission } from "./folder-access";
 import { scanLibrary, type ComicChapter, type ComicSeries, type LibraryScan } from "./library-scanner";
@@ -10,9 +12,10 @@ const count = (value: number, noun: string): string => `${value} ${noun}${value 
 export function initializeLibraryView(
   openPreview: () => void,
   reportAccessFailure: (root: FileSystemDirectoryHandle, error: unknown) => Promise<void>,
-  openChapter: (series: ComicSeries, chapter: ComicChapter, position?: ReadingProgress) => void,
+  openChapter: (series: ComicSeries, chapter: ComicChapter, position?: ReadingAnchor) => void,
   data: ReadingData,
-): { updateConnection: (connection: LibraryConnection) => void; resetDetail: () => void; returnToSeries: (series: ComicSeries, chapter: ComicChapter) => void } {
+  notify: (message: string) => void,
+): { resolveChapter: (seriesId: string, chapterId: string) => { series: ComicSeries; chapter: ComicChapter } | null; subscribeScan: (listener: () => void) => void; updateConnection: (connection: LibraryConnection) => void; resetDetail: () => void; returnToSeries: (series: ComicSeries, chapter: ComicChapter) => void } {
   const grid = document.querySelector<HTMLDivElement>("#comic-grid")!;
   const samples = Array.from(grid.querySelectorAll<HTMLButtonElement>(".comic-card"));
   const search = document.querySelector<HTMLInputElement>("#library-search")!;
@@ -36,6 +39,7 @@ export function initializeLibraryView(
   let abort: AbortController | null = null;
   let scanning = false;
   let result: LibraryScan | null = null;
+  const scanListeners = new Set<() => void>();
   let detailSeries: ComicSeries | null = null;
   let continuation: { series: ComicSeries; chapter: ComicChapter; record: ReadingProgress } | null = null;
   let returnCard: HTMLButtonElement | null = null;
@@ -68,7 +72,21 @@ export function initializeLibraryView(
       const state = document.createElement("span"); state.className = "chapter-state"; button.append(state);
       button.dataset.chapterId = chapter.id;
       button.addEventListener("click", () => openChapter(series, chapter));
-      row.append(button);
+      const actions = document.createElement("div"); actions.className = "chapter-actions";
+      for (const [label, read] of [["Mark read", true], ["Mark unread", false]] as const) {
+        const action = document.createElement("button"); action.type = "button"; action.className = "button button-secondary";
+        action.textContent = label; action.dataset.readAction = String(read);
+        action.setAttribute("aria-label", `${label}: ${chapter.displayName}`);
+        action.addEventListener("click", async () => {
+          if (!root || !data.available || data.busy) return;
+          try { await data.markChapters(root.name, series.id, [chapter.id], read); notify(read ? "Chapter marked read." : "Chapter marked unread. Bookmarks retained."); }
+          catch (error) { notify(error instanceof Error ? error.message : "Reading state could not be changed."); }
+          if (action.hidden) (actions.querySelector<HTMLButtonElement>("button:not([hidden])") ?? button).focus();
+        });
+        actions.append(action);
+      }
+      row.dataset.rowChapterId = chapter.id;
+      row.append(button, actions);
       return row;
     });
     chapterList.replaceChildren(...rows);
@@ -132,11 +150,13 @@ export function initializeLibraryView(
     const summary = real ? result ? `${result.series.length} series · ${count(result.chapterCount, "chapter")}` : "Library not scanned yet" : "Preview · 4 sample series";
     document.querySelectorAll<HTMLElement>("[data-library-summary]").forEach(element => element.textContent = summary);
     refreshProgress();
+    scanListeners.forEach(listener => listener());
   }
 
   function refreshProgress(): void {
     const records = root ? data.all(root.name) : [];
     continuation = null;
+    document.querySelectorAll<HTMLButtonElement>("[data-series-read]").forEach(b => b.disabled = !root || !detailSeries || !data.available || data.busy);
     if (root && result) {
       for (const record of [...records].sort((a, b) => b.updatedAt - a.updatedAt)) {
         const series = result.series.find(s => s.id === record.seriesId);
@@ -145,25 +165,37 @@ export function initializeLibraryView(
       }
       for (const card of grid.querySelectorAll<HTMLElement>("[data-series-id]")) {
         const series = result.series.find(s => s.id === card.dataset.seriesId)!;
-        const progress = seriesProgress(series, records);
-        card.querySelector<HTMLElement>(".series-progress")!.textContent = `${progress.state} ? ${progress.percent}%`;
+        const progress = seriesProgress(series, records, data.allStatuses(root.name));
+        card.querySelector<HTMLElement>(".series-progress")!.textContent = `${progress.state} \u00b7 ${progress.percent}%`;
       }
-      if (detailSeries) for (const button of chapterList.querySelectorAll<HTMLElement>("[data-chapter-id]")) {
-        const record = records.find(r => r.seriesId === detailSeries!.id && r.chapterId === button.dataset.chapterId);
-        button.querySelector<HTMLElement>(".chapter-state")!.textContent = record?.completed ? "Completed" : record ? "Reading" : "Unread";
+      if (detailSeries) {
+        const statuses = data.allStatuses(root.name).filter(r => r.seriesId === detailSeries!.id);
+        const progress = records.filter(r => r.seriesId === detailSeries!.id);
+        const summary = seriesProgress(detailSeries, records, statuses);
+        detailCount.textContent = `${count(detailSeries.chapters.length, "chapter")} \u00b7 ${summary.state} \u00b7 ${summary.percent}%`;
+        for (const row of chapterList.querySelectorAll<HTMLElement>("[data-row-chapter-id]")) {
+          const state = chapterState(row.dataset.rowChapterId!, progress, statuses);
+          row.querySelector<HTMLElement>(".chapter-state")!.textContent = state;
+          for (const action of row.querySelectorAll<HTMLButtonElement>("[data-read-action]")) {
+            const read = action.dataset.readAction === "true";
+            action.hidden = read ? state === "Read" : state === "Unread";
+            action.disabled = !data.available || data.busy;
+          }
+        }
       }
     }
     continuePanel.hidden = Boolean(root) && !continuation;
-    continuePanel.querySelector<HTMLElement>(".eyebrow")!.textContent = root ? "Continue reading" : "Preview ? Continue reading";
+    continuePanel.querySelector<HTMLElement>(".eyebrow")!.textContent = root ? "Continue reading" : "Preview - Continue reading";
     continuePanel.querySelector("h2")!.textContent = continuation?.series.name ?? "Skybound Archive";
-    continuePanel.querySelector("p")!.textContent = continuation ? `${continuation.chapter.displayName} ? Page ${Math.min(continuation.record.pageIndex + 1, continuation.record.pageCount)} of ${continuation.record.pageCount}` : "Chapter 12 ? Page 18 of 26";
-    const percent = continuation ? seriesProgress(continuation.series, records).percent : 64;
+    continuePanel.querySelector("p")!.textContent = continuation ? `${continuation.chapter.displayName} - Page ${Math.min(continuation.record.pageIndex + 1, continuation.record.pageCount)} of ${continuation.record.pageCount}` : "Chapter 12 - Page 18 of 26";
+    const percent = continuation ? seriesProgress(continuation.series, records, data.allStatuses(root!.name)).percent : 64;
     const bar = continuePanel.querySelector<HTMLElement>("[role=progressbar]")!;
     bar.setAttribute("aria-label", `${continuation?.series.name ?? "Skybound Archive"} reading progress`);
     bar.setAttribute("aria-valuenow", String(percent));
     bar.querySelector<HTMLElement>(".progress-value")!.style.width = `${percent}%`;
   }
   data.subscribe(refreshProgress);
+  data.subscribe(() => { document.querySelector<HTMLButtonElement>("#confirm-series-state")!.disabled = data.busy || !data.available; });
   document.querySelector("#continue-button")!.addEventListener("click", () => {
     if (continuation && root && result) openChapter(continuation.series, continuation.chapter, continuation.record);
     else if (!root) openPreview();
@@ -219,7 +251,7 @@ export function initializeLibraryView(
         await reportAccessFailure(currentRoot, error);
       }
     } finally {
-      if (current()) { scanning = false; abort = null; updateButtons(); }
+      if (current()) { scanning = false; abort = null; updateButtons(); scanListeners.forEach(listener => listener()); }
     }
   }
 
@@ -242,6 +274,25 @@ export function initializeLibraryView(
     updateButtons();
   }
 
+  const seriesDialog = document.querySelector<HTMLDialogElement>("#series-state-dialog")!;
+  let seriesInitiator: HTMLButtonElement | null = null;
+  let seriesAction: { series: ComicSeries; root: FileSystemDirectoryHandle; read: boolean } | null = null;
+  document.querySelectorAll<HTMLButtonElement>("[data-series-read]").forEach(button => button.addEventListener("click", () => {
+    if (!root || !detailSeries || !data.available || data.busy) return;
+    seriesInitiator = button; seriesAction = { root, series: detailSeries, read: button.dataset.seriesRead === "true" };
+    document.querySelector("#series-state-title")!.textContent = seriesAction.read ? "Mark series read?" : "Mark series unread?";
+    document.querySelector("#series-state-description")!.textContent = `${detailSeries.name}: ${seriesAction.read ? "Mark all currently scanned chapters read. Progress and bookmarks stay saved." : "Remove all progress and manual read states for this series. Bookmarks stay saved."} Comic files stay unchanged.`;
+    seriesDialog.showModal();
+  }));
+  document.querySelector("#cancel-series-state")!.addEventListener("click", () => seriesDialog.close());
+  seriesDialog.addEventListener("close", () => { seriesInitiator?.focus(); seriesAction = null; });
+  document.querySelector("#confirm-series-state")!.addEventListener("click", async () => {
+    const action = seriesAction;
+    if (!action || root !== action.root || !result?.series.includes(action.series) || data.busy || !data.available) { seriesDialog.close(); return; }
+    try { await data.markChapters(root.name, action.series.id, action.series.chapters.map(c => c.id), action.read, true); notify(action.read ? "Series marked read." : "Series marked unread. Bookmarks retained."); }
+    catch (error) { notify(error instanceof Error ? error.message : "Series state could not be changed."); }
+    seriesDialog.close();
+  });
   samples.forEach(card => card.addEventListener("click", openPreview));
   search.addEventListener("input", renderLibrary);
   sort.addEventListener("change", renderLibrary);
@@ -251,6 +302,12 @@ export function initializeLibraryView(
   updateButtons();
   return {
     updateConnection,
+    subscribeScan: listener => { scanListeners.add(listener); },
+    resolveChapter(seriesId, chapterId) {
+      if (!root || !result || scanning) return null;
+      const series = result.series.find(s => s.id === seriesId); const chapter = series?.chapters.find(c => c.id === chapterId);
+      return series && chapter ? { series, chapter } : null;
+    },
     resetDetail: () => resetDetail(),
     returnToSeries(series, chapter): void {
       if (!result?.series.includes(series)) { resetDetail(); search.focus(); return; }

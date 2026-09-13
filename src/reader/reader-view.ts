@@ -1,4 +1,5 @@
-import type { ReadingData } from "../storage/reading-data";
+import { bookmarkId, type ReadingAnchor } from "../storage/bookmarks";
+import type { ProgressToken, ReadingData } from "../storage/reading-data";
 import type { ReadingProgress } from "../storage/reading-progress";
 import type { ComicChapter, ComicSeries } from "../library/library-scanner";
 import { ArchiveError } from "./archive-safety";
@@ -37,6 +38,7 @@ export function initializeReaderView(
   permissionLost: (error: unknown) => void,
   data: ReadingData,
   libraryName: () => string | null,
+  notify: (message: string) => void,
 ) {
   const pagesElement = document.querySelector<HTMLElement>("#pages")!;
   const title = document.querySelector<HTMLElement>("#reader-series-name")!;
@@ -51,32 +53,56 @@ export function initializeReaderView(
   const pageTargets = new Map<Element, { section: ChapterSection; slot: PageSlot }>();
   const endTargets = new Map<Element, ChapterSection>();
   let session: ReadingSession | null = null;
+  const bookmarkButton = document.querySelector<HTMLButtonElement>("#bookmark-button")!;
+  let bookmarking = false;
+  let pendingToken: ProgressToken | null = null;
   let saveTimer = 0;
   let pending: Omit<ReadingProgress, "updatedAt"> | null = null;
-  let restore: ReadingProgress | undefined;
+  let restore: ReadingAnchor | undefined;
   let restoring = false;
   function flushProgress(): void {
     window.clearTimeout(saveTimer); saveTimer = 0;
-    if (pending) { const record = pending; pending = null; data.save(record); }
+    if (pending) { const record = pending; pending = null; data.save(record, pendingToken ?? data.token(record)); pendingToken = null; }
   }
-  function capture(completed = false, view = session ? sections.get(session.currentIndex) : undefined): void {
-    if (!session || restoring || !view?.slots.length) return;
-    const name = libraryName(); if (!name) return;
+  function currentAnchor(view = session ? sections.get(session.currentIndex) : undefined): Omit<ReadingProgress, "completed" | "updatedAt"> | null {
+    if (!session || restoring || !view?.slots.length) return null;
+    const name = libraryName(); if (!name) return null;
     const line = readingLine();
     const distance = (item: PageSlot): number => { const r = item.container.getBoundingClientRect(); return Math.max(r.top - line, line - r.bottom, 0); };
     const slot = view.slots.reduce((best, value) => distance(value) < distance(best) ? value : best);
     const rect = slot.container.getBoundingClientRect();
     const offsetRatio = Math.round(Math.max(0, Math.min(1, (line - rect.top) / Math.max(1, rect.height))) * 1000) / 1000;
-    const record = { libraryName: name, seriesId: session.series.id, seriesName: session.series.name,
+    return { libraryName: name, seriesId: session.series.id, seriesName: session.series.name,
       chapterId: view.chapter.chapter.id, chapterName: view.chapter.chapter.displayName,
-      pageIndex: slot.number - 1, pageCount: view.slots.length, offsetRatio, completed };
+      pageIndex: slot.number - 1, pageCount: view.slots.length, offsetRatio };
+  }
+  function capture(completed = false, view = session ? sections.get(session.currentIndex) : undefined): void {
+    const anchor = currentAnchor(view); if (!anchor || data.busy) return;
+    const record = { ...anchor, completed };
     if (pending && JSON.stringify(pending) === JSON.stringify(record)) return;
-    const previous = data.all(name).find(r => r.seriesId === record.seriesId && r.chapterId === record.chapterId);
-    if (!pending && previous && previous.pageCount === record.pageCount && previous.pageIndex === record.pageIndex && previous.offsetRatio === offsetRatio && (!completed || previous.completed)) return;
-    pending = record; window.clearTimeout(saveTimer);
+    const previous = data.all(anchor.libraryName).find(r => r.seriesId === record.seriesId && r.chapterId === record.chapterId);
+    if (!pending && previous && previous.pageCount === record.pageCount && previous.pageIndex === record.pageIndex && previous.offsetRatio === record.offsetRatio && (!completed || previous.completed)) return;
+    pending = record; pendingToken = data.token(record); window.clearTimeout(saveTimer);
     saveTimer = window.setTimeout(flushProgress, 700);
     if (completed) flushProgress();
   }
+  function syncBookmark(): void {
+    const anchor = currentAnchor();
+    bookmarkButton.disabled = !anchor || !data.available || (data.busy && !bookmarking);
+    bookmarkButton.setAttribute("aria-pressed", String(Boolean(anchor && data.allBookmarks(anchor.libraryName).some(b => b.id === bookmarkId(anchor)))));
+    bookmarkButton.textContent = bookmarkButton.getAttribute("aria-pressed") === "true" ? "Remove bookmark" : "Bookmark page";
+    bookmarkButton.title = !data.available ? "Saved reading data is unavailable on this device." : "Toggle bookmark for the current reading page";
+  }
+  const toggleBookmark = async (): Promise<void> => {
+    trackVisible(false);
+    const anchor = currentAnchor(); if (!anchor || !data.available || data.busy) return;
+    bookmarking = true;
+    try { notify(await data.toggleBookmark(anchor) ? "Page bookmarked." : "Bookmark removed."); }
+    catch (error) { notify(error instanceof Error ? error.message : "Bookmark could not be saved."); }
+    finally { bookmarking = false; syncBookmark(); }
+  };
+  bookmarkButton.addEventListener("click", toggleBookmark);
+  data.subscribe(syncBookmark);
   function applyPreferences(): void {
     const prefs = data.preferences; setZoom(prefs.zoom);
     automatic.checked = readerAutomatic.checked = prefs.automaticContinuation;
@@ -116,8 +142,9 @@ export function initializeReaderView(
     scheduleTracking();
   }
 
-  function clear(): Promise<void> {
-    trackVisible(false); capture(); flushProgress();
+  function clear(save = true): Promise<void> {
+    if (save) { trackVisible(false); capture(); flushProgress(); }
+    else { window.clearTimeout(saveTimer); pending = null; pendingToken = null; }
     restoring = false; restore = undefined;
     generation++;
     if (frame) cancelAnimationFrame(frame);
@@ -127,6 +154,7 @@ export function initializeReaderView(
     resizeObserver = null;
     const previous = session;
     session = null;
+    syncBookmark();
     openingSelection = false;
     startingSelection = null;
     // close() revokes URLs synchronously, then waits for pending operations.
@@ -387,7 +415,7 @@ export function initializeReaderView(
     const page = visible.slots.reduce<PageSlot | null>((best, slot) => !best || distance(slot.container) < distance(best.container) ? slot : best, null);
     const label = `${active.currentChapter.displayName} · ${page ? `Page ${page.number} of ${visible.slots.length}` : "No image pages"}`;
     if (chapterName.textContent !== label) chapterName.textContent = label;
-    capture();
+    capture(); syncBookmark();
     const endRect = visible.end.getBoundingClientRect();
     if (prepare && automatic.checked && endRect.top <= window.innerHeight * 2 && endRect.bottom >= 0) void active.prepareNext(active.currentIndex);
     if (active.currentIndex === active.series.chapters.length - 1 && endRect.top >= Math.max(0, document.querySelector<HTMLElement>(".reader-toolbar")!.getBoundingClientRect().bottom) && endRect.bottom <= window.innerHeight - 64 && !endedSeries) {
@@ -405,13 +433,13 @@ export function initializeReaderView(
     }
   }
   function finishRestore(slot: PageSlot, failed: boolean): void {
-    if (session) chapterName.textContent = `${session.currentChapter.displayName} ? Page ${slot.number} of ${sections.get(session.currentIndex)!.slots.length}`;
+    if (session) chapterName.textContent = `${session.currentChapter.displayName} \u00b7 Page ${slot.number} of ${sections.get(session.currentIndex)!.slots.length}`;
 
     status.textContent = failed ? "Saved page could not be loaded. Position restored to its placeholder; Retry is available." : `Reading position restored: page ${slot.number}.`;
     positionRestore(slot); restoring = false; restore = undefined;
     scheduleTracking();
   }
-  function open(series: ComicSeries, chapter: ComicChapter, position?: ReadingProgress): void {
+  function open(series: ComicSeries, chapter: ComicChapter, position?: ReadingAnchor): void {
     if (destroyed) return;
     void clear();
     restore = position; restoring = Boolean(position);
@@ -510,9 +538,10 @@ export function initializeReaderView(
     window.removeEventListener("scroll", scheduleTracking);
     window.removeEventListener("resize", scheduleTracking);
     window.removeEventListener("pagehide", onPageHide);
+    bookmarkButton.removeEventListener("click", toggleBookmark);
     document.removeEventListener("visibilitychange", onHidden);
   };
   window.addEventListener("pagehide", onPageHide);
-  applyPreferences();
-  return { open, preview, close: clear, destroy, resetReadingData: () => { window.clearTimeout(saveTimer); pending = null; }, isOpen: () => session !== null || openingSelection };
+  applyPreferences(); syncBookmark();
+  return { open, preview, close: () => clear(), closeWithoutSaving: () => clear(false), destroy, resetReadingData: () => { window.clearTimeout(saveTimer); pending = null; pendingToken = null; }, isOpen: () => session !== null || openingSelection };
 }

@@ -1,3 +1,5 @@
+import { initializeBookmarksView } from "./library/bookmarks-view";
+import { initializeBackupSettings } from "./reader/backup-settings";
 import { ReadingData } from "./storage/reading-data";
 import { initializeReaderSettings } from "./reader/reader-settings";
 import "./styles.css";
@@ -8,12 +10,13 @@ import { initializeReaderView } from "./reader/reader-view";
 import { checkReadPermission } from "./library/folder-access";
 import type { LibraryConnection } from "./library/connection";
 
-type ViewName = "library" | "reader" | "settings";
+type ViewName = "library" | "reader" | "bookmarks" | "settings";
 
 async function start(): Promise<void> {
   const views = Array.from(document.querySelectorAll<HTMLElement>("[data-view]"));
   const navigationButtons = Array.from(document.querySelectorAll<HTMLButtonElement>("[data-view-target]"));
   const toast = document.querySelector<HTMLDivElement>("#toast");
+  let toastTimer = 0;
   function showView(name: ViewName): void {
     views.forEach(view => { view.hidden = view.dataset.view !== name; });
     navigationButtons.forEach(button => {
@@ -26,7 +29,8 @@ async function start(): Promise<void> {
   function showToast(message: string): void {
     if (!toast) return;
     toast.textContent = message; toast.hidden = false;
-    window.setTimeout(() => { toast.hidden = true; }, 2600);
+    window.clearTimeout(toastTimer);
+    toastTimer = window.setTimeout(() => { toast.hidden = true; }, 2600);
   }
   const readingData = new ReadingData(message => {
     const warning = document.querySelector<HTMLElement>("#storage-warning")!;
@@ -49,8 +53,14 @@ async function start(): Promise<void> {
     },
     readingData,
     () => currentConnection?.handle?.name ?? null,
+    showToast,
   );
-  initializeReaderSettings(readingData, () => readerView.resetReadingData());
+  const activeLibrary = (): FileSystemDirectoryHandle | null => currentConnection?.state === "connected" ? currentConnection.handle : null;
+  const prepareReplacement = async (): Promise<void> => {
+    await readerView.closeWithoutSaving(); showView("settings");
+  };
+  initializeReaderSettings(readingData, prepareReplacement, showToast);
+  const backupSettings = initializeBackupSettings(readingData, activeLibrary, prepareReplacement, showToast);
   const libraryView = initializeLibraryView(
     () => { void readerView.close(); showView("reader"); readerView.preview(); },
     (root, error) => libraryConnection.reportAccessFailure(root, error),
@@ -58,7 +68,13 @@ async function start(): Promise<void> {
       void readerView.close(); showView("reader"); readerView.open(series, chapter, position);
     },
     readingData,
+    showToast,
   );
+  const bookmarksView = initializeBookmarksView(readingData, () => activeLibrary()?.name ?? null,
+    libraryView.resolveChapter, (series, chapter, anchor) => {
+      void readerView.close(); showView("reader"); readerView.open(series, chapter, anchor);
+    }, showToast);
+  libraryView.subscribeScan(bookmarksView.render);
   const libraryConnection = initializeLibraryConnection(showToast, connection => {
     const previous = currentConnection;
     if (previous?.handle && (connection.handle !== previous.handle || connection.state !== "connected")) {
@@ -67,6 +83,7 @@ async function start(): Promise<void> {
     }
     currentConnection = connection;
     libraryView.updateConnection(connection);
+    bookmarksView.render(); backupSettings.refresh();
   });
   navigationButtons.forEach(button => button.addEventListener("click", () => {
     const name = button.dataset.viewTarget as ViewName;
