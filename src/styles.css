@@ -141,7 +141,7 @@ select:focus-visible {
 .text-button {
   border: 0;
   border-radius: 0.55rem;
-  min-height: 42px;
+  min-height: 44px;
   padding: 0.65rem 0.9rem;
   background: transparent;
 }
@@ -280,7 +280,7 @@ input[type="search"] {
 
 .continue-panel {
   display: grid;
-  grid-template-columns: 92px minmax(0, 1fr) auto;
+  grid-template-columns: minmax(0, 1fr) auto;
   align-items: center;
   gap: 1.2rem;
   margin-bottom: 2rem;
@@ -316,7 +316,7 @@ input[type="search"] {
 }
 
 .progress-value {
-  width: 64%;
+  width: 0;
   height: 100%;
   background: var(--accent);
 }
@@ -355,13 +355,7 @@ input[type="search"] {
 }
 
 .comic-card:hover .cover-placeholder {
-  transform: translateY(-3px);
   border-color: var(--accent);
-}
-
-.comic-card > span:last-child {
-  color: var(--muted);
-  font-size: 0.8rem;
 }
 
 .cover-placeholder {
@@ -373,7 +367,7 @@ input[type="search"] {
   border: 1px solid var(--line);
   border-radius: 0.75rem;
   background: var(--panel-soft);
-  transition: transform 160ms ease, border-color 160ms ease;
+  transition: border-color 160ms ease;
 }
 
 .cover-placeholder span {
@@ -382,17 +376,6 @@ input[type="search"] {
   font-size: clamp(1.5rem, 4vw, 2.8rem);
   font-weight: 800;
   letter-spacing: -0.08em;
-}
-
-.cover-small {
-  width: 92px;
-  border-radius: 0.6rem;
-  background: linear-gradient(145deg, #243a59, #111a29 60%, #d59b39);
-}
-
-.cover-small span {
-  padding: 0.55rem;
-  font-size: 1.5rem;
 }
 
 .cover-one {
@@ -541,27 +524,6 @@ input[type="search"] {
 
 .chapter-button:hover { background: var(--panel-soft); }
 
-.comic-page {
-  display: grid;
-  place-items: center;
-  aspect-ratio: 0.72;
-  margin-bottom: 0.65rem;
-  background:
-    linear-gradient(135deg, rgba(0, 0, 0, 0.06) 25%, transparent 25%) 0 0 / 34px 34px,
-    linear-gradient(315deg, rgba(0, 0, 0, 0.06) 25%, transparent 25%) 0 0 / 34px 34px,
-    #e4e6e9;
-  color: #545a62;
-  box-shadow: 0 10px 36px rgba(0, 0, 0, 0.28);
-}
-
-.chapter-divider {
-  display: grid;
-  gap: 0.35rem;
-  padding: 2.6rem 1rem;
-  color: var(--muted);
-  text-align: center;
-}
-
 .reader-chapter { overflow-anchor: none; }
 
 .chapter-start {
@@ -593,11 +555,6 @@ input[type="search"] {
 .reader-chapter + .reader-chapter .chapter-start {
   border-top: 1px solid var(--line);
   text-align: center;
-}
-
-.chapter-divider strong {
-  color: var(--text);
-  font-size: 1.1rem;
 }
 
 .settings-grid {
@@ -821,11 +778,7 @@ dialog::backdrop {
   }
 
   .continue-panel {
-    grid-template-columns: 72px minmax(0, 1fr);
-  }
-
-  .cover-small {
-    width: 72px;
+    grid-template-columns: minmax(0, 1fr);
   }
 
   .continue-panel .button {
@@ -836,22 +789,8 @@ dialog::backdrop {
     grid-template-columns: repeat(2, minmax(115px, 1fr));
   }
 
-  .reader-toolbar {
-    position: static;
-    align-items: stretch;
-    flex-direction: column;
-  }
-
   .reader-controls {
     align-items: end;
-  }
-
-  .zoom-control {
-    flex: 1;
-  }
-
-  .pages {
-    width: min(var(--reader-width), calc(100% - 1rem));
   }
 
   .setting-row {
@@ -898,7 +837,8 @@ dialog::backdrop {
 
 /* Reader preferences affect the reading surface, including page placeholders. */
 .real-comic-page { margin-bottom: var(--page-gap, 0px); }
-.reader-view[data-background="black"] { --reader: #000; }
+.reader-view[data-background="black"], .reader-view[data-background="oled"] { --reader: #000; }
+.reader-view[data-background="oled"] .real-comic-page:not(.loaded) { background: #000; }
 .reader-view[data-background="dark"] { --reader: #191c22; }
 .reader-view[data-background="light"] { --reader: #f3f4f6; --text: #17202d; --muted: #465367; }
 .reader-view[data-background="light"] .real-comic-page:not(.loaded) { background: #e4e7ec; color: #17202d; }
@@ -926,7 +866,6 @@ dialog::backdrop {
 .series-open strong { line-height: 1.4; overflow-wrap: anywhere; }
 .series-open > span:not(.cover-placeholder), .cover-status { color: var(--muted); font-size: .8rem; }
 .real-comic-card .cover-placeholder { position: relative; transition: border-color 120ms ease; }
-.real-comic-card:hover .cover-placeholder { transform: none; }
 .real-comic-card:focus-within .cover-placeholder { border-color: var(--accent); }
 .real-comic-card .cover-placeholder img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; opacity: 0; }
 .real-comic-card .cover-placeholder.has-cover img { opacity: 1; }
@@ -961,4 +900,36 @@ kbd { font-family: inherit; border: 1px solid var(--line); border-radius: 4px; p
   .reader-chapter-navigation > button { flex: 1; }
   .reader-chapter-navigation label { flex-basis: 100%; order: -1; }
   .reader-show-controls { right: .5rem; }
+}
+
+/* Desktop keeps explicit controls; phones use a compact overlay. */
+.reader-preferences { display: contents; }
+#reader-settings-button { display: none; }
+@media (max-width: 700px) {
+  body.reading { background: var(--background); }
+  body.reading .topbar, body.reading .mobile-nav { display: none; }
+  body.reading .reader-view { padding: 0; min-height: 100dvh; }
+  body.reading .workspace { min-height: 100dvh; }
+  .reader-toolbar {
+    position: fixed; top: auto; bottom: 0; left: 0; right: 0;
+    z-index: 25; max-height: 45vh; max-height: 45dvh;
+    padding: .5rem max(.5rem, env(safe-area-inset-right)) max(.5rem, env(safe-area-inset-bottom)) max(.5rem, env(safe-area-inset-left));
+    gap: .4rem; background: #181b1f; border-top: 1px solid var(--line); border-bottom: 0;
+    overscroll-behavior: contain;
+  }
+  .reader-title div, #reader-library-button, .reader-controls .zoom-control, #fit-width-button { display: none; }
+  .reader-title { width: 100%; }
+  .reader-controls { gap: .4rem; align-items: end; }
+  .reader-controls > .button { flex: 1; }
+  .reader-chapter-navigation { gap: .4rem; }
+  .reader-preferences { display: flex; flex-wrap: wrap; gap: .4rem; width: 100%; }
+  .reader-preferences > label { flex: 1; }
+  .reader-preferences .continuation-control { flex-basis: 100%; }
+  #reader-settings-button { display: inline-block; }
+  .reader-show-controls { top: auto; bottom: max(.75rem, env(safe-area-inset-bottom)); right: max(.5rem, env(safe-area-inset-right)); z-index: 25; }
+  .reader-view .pages { width: 100%; max-width: 100%; padding: max(.5rem, env(safe-area-inset-top)) env(safe-area-inset-right) max(3rem, env(safe-area-inset-bottom)) env(safe-area-inset-left); }
+  .real-comic-page img { width: 100%; }
+  .reader-status { position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; overflow: hidden; clip-path: inset(50%); }
+  .mobile-nav { padding-bottom: max(.45rem, env(safe-area-inset-bottom)); }
+  body.reading .toast { bottom: calc(45dvh + .75rem); }
 }

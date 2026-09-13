@@ -1,7 +1,7 @@
 import type { ComicChapter, ComicSeries } from "../library/library-scanner";
 import { openChapter, type OpenedChapter } from "./cbz-reader";
 
-export type ChapterState = "opening" | "ready" | "rendering" | "failed" | "closed";
+type ChapterState = "opening" | "ready" | "rendering" | "failed" | "closed";
 
 export interface SessionChapter {
   chapter: ComicChapter;
@@ -26,7 +26,6 @@ export class ReadingSession {
   readonly series: ComicSeries;
   readonly startIndex: number;
   currentIndex: number;
-  generation = 0;
   private readonly chapters = new Map<number, SessionChapter>();
   private opening: Promise<void> = Promise.resolve();
   private cleanup: Promise<void> = Promise.resolve();
@@ -42,7 +41,7 @@ export class ReadingSession {
     this.currentIndex = this.startIndex;
   }
 
-  get mounted(): SessionChapter[] {
+  private get mounted(): SessionChapter[] {
     return [...this.chapters.values()].sort((a, b) => a.index - b.index);
   }
 
@@ -173,7 +172,6 @@ export class ReadingSession {
   close(): Promise<void> {
     if (this.closing) return this.closing;
     this.closed = true;
-    this.generation++;
     this.queue = [];
     for (const chapter of this.mounted) this.release(chapter);
     this.closing = Promise.allSettled([this.opening, this.cleanup, this.extraction]).then(() => {});

@@ -17,14 +17,14 @@ export function initializeBackupSettings(
   const mismatchLabel = document.querySelector<HTMLElement>("#library-mismatch-label")!;
   const confirm = document.querySelector<HTMLButtonElement>("#confirm-import-reading")!;
   let selection = 0;
-  let preview: { backup: ReadingBackup; root: FileSystemDirectoryHandle } | null = null;
+  let pendingImport: { backup: ReadingBackup; root: FileSystemDirectoryHandle } | null = null;
   let importing = false;
   function refresh(): void {
     const root = activeLibrary();
     const disabled = !root || !data.available || data.busy || importing;
     exportButton.disabled = importButton.disabled = input.disabled = disabled;
     explanation.textContent = !data.available ? "Backups require working device storage. Reading remains available." : !root ? "Connect a library before exporting or importing its reading data." : "Backups contain only reading metadata and preferences. Import replaces this library's saved data.";
-    confirm.disabled = !preview || preview.root !== root || !data.available || data.busy || importing || (preview.backup.libraryName !== root?.name && !mismatch.checked);
+    confirm.disabled = !pendingImport || pendingImport.root !== root || !data.available || data.busy || importing || (pendingImport.backup.libraryName !== root?.name && !mismatch.checked);
   }
   function showError(value: unknown): void { error.textContent = value instanceof Error ? value.message : "Reading backup could not be processed."; error.hidden = false; }
   data.subscribe(refresh);
@@ -46,7 +46,7 @@ export function initializeBackupSettings(
       if (file.size > MAX_BACKUP_BYTES) throw new Error("Backup exceeds the 5 MiB limit.");
       const backup = parseBackup(await file.text());
       if (operation !== selection || root !== activeLibrary() || !data.available || data.busy) return;
-      preview = { backup, root };
+      pendingImport = { backup, root };
       mismatch.checked = false; mismatchLabel.hidden = backup.libraryName === root.name;
       document.querySelector("#import-reading-summary")!.textContent = `Backup library: ${backup.libraryName}. Connected library: ${root.name}. Replace saved data with ${backup.progress.length} progress records, ${backup.bookmarks.length} bookmarks, ${backup.readStatuses.length} manual read states, and reader preferences. Comic files and the folder connection stay unchanged.`;
       refresh(); dialog.showModal();
@@ -56,9 +56,9 @@ export function initializeBackupSettings(
   mismatch.addEventListener("change", refresh);
   document.querySelector("#cancel-import-reading")!.addEventListener("click", () => dialog.close());
   dialog.addEventListener("cancel", event => { if (importing) event.preventDefault(); });
-  dialog.addEventListener("close", () => { preview = null; selection++; refresh(); if (importButton.disabled) document.querySelector<HTMLElement>("#settings-title")!.focus(); else importButton.focus(); });
+  dialog.addEventListener("close", () => { pendingImport = null; selection++; refresh(); if (importButton.disabled) document.querySelector<HTMLElement>("#settings-title")!.focus(); else importButton.focus(); });
   confirm.addEventListener("click", async () => {
-    const current = preview;
+    const current = pendingImport;
     if (!current || current.root !== activeLibrary() || confirm.disabled) return;
     importing = true; refresh();
     document.querySelector<HTMLButtonElement>("#cancel-import-reading")!.disabled = true;

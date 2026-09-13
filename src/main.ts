@@ -24,6 +24,7 @@ async function start(): Promise<void> {
       button.classList.toggle("active", active);
       button.setAttribute("aria-pressed", String(active));
     });
+    document.body.classList.toggle("reading", name === "reader");
     libraryView.setVisible(name === "library");
     window.scrollTo({ top: 0, behavior: "instant" });
   }
@@ -63,7 +64,6 @@ async function start(): Promise<void> {
   initializeReaderSettings(readingData, prepareReplacement, showToast);
   const backupSettings = initializeBackupSettings(readingData, activeLibrary, prepareReplacement, showToast);
   const libraryView = initializeLibraryView(
-    () => { void readerView.close(); showView("reader"); readerView.preview(); },
     (root, error) => libraryConnection.reportAccessFailure(root, error),
     (series, chapter, position) => {
       void readerView.close(); showView("reader"); readerView.open(series, chapter, position);
@@ -86,14 +86,34 @@ async function start(): Promise<void> {
     libraryView.updateConnection(connection);
     bookmarksView.render(); backupSettings.refresh();
   });
+  let permissionCheck = false;
+  const checkCurrentPermission = (): void => {
+    const root = activeLibrary();
+    if (!root || permissionCheck || document.visibilityState === "hidden") return;
+    permissionCheck = true;
+    void checkReadPermission(root).then(permission => {
+      if (root === activeLibrary() && permission !== "granted") return libraryConnection.reportAccessFailure(root, new DOMException("Read permission changed", "NotAllowedError"));
+    }).catch(error => {
+      if (root === activeLibrary()) return libraryConnection.reportAccessFailure(root, error);
+    }).finally(() => { permissionCheck = false; });
+  };
+  document.addEventListener("visibilitychange", checkCurrentPermission);
+  window.addEventListener("focus", checkCurrentPermission);
   navigationButtons.forEach(button => button.addEventListener("click", () => {
     const name = button.dataset.viewTarget as ViewName;
-    if (name === "reader") { if (!readerView.isOpen()) readerView.preview(); }
-    else void readerView.close();
+    if (name !== "reader") void readerView.close();
     if (name === "library") libraryView.resetDetail();
     showView(name);
   }));
-  window.addEventListener("pagehide", event => { if (!event.persisted) libraryView.destroy(); else libraryView.setVisible(false); });
+  window.addEventListener("pagehide", event => {
+    window.clearTimeout(toastTimer);
+    if (toast) toast.hidden = true;
+    if (!event.persisted) {
+      libraryView.destroy();
+      document.removeEventListener("visibilitychange", checkCurrentPermission);
+      window.removeEventListener("focus", checkCurrentPermission);
+    } else libraryView.setVisible(false);
+  });
   window.addEventListener("pageshow", () => libraryView.setVisible(!document.querySelector<HTMLElement>('[data-view="library"]')!.hidden));
   registerSW({
     onOfflineReady() { showToast("Comic Reader is ready to use offline."); },

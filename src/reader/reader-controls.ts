@@ -1,4 +1,5 @@
 import type { ComicChapter, ComicSeries } from "../library/library-scanner";
+import { initializeMobileReaderControls } from "./mobile-reader-controls";
 
 interface ControlActions {
   open(series: ComicSeries, chapter: ComicChapter): void;
@@ -21,11 +22,15 @@ export function initializeReaderControls(actions: ControlActions) {
   const help = document.querySelector<HTMLButtonElement>("#reader-shortcuts")!;
   const dialog = document.querySelector<HTMLDialogElement>("#reader-shortcut-dialog")!;
   const closeHelp = document.querySelector<HTMLButtonElement>("#close-reader-shortcuts")!;
+  const settings = document.querySelector<HTMLButtonElement>("#reader-settings-button")!;
+  const preferences = document.querySelector<HTMLElement>("#reader-preferences")!;
   let series: ComicSeries | null = null;
   let index = -1;
   let fullscreenPending = false;
   let ownsFullscreen = false;
   let returnFocus: HTMLElement | null = null;
+  let destroyed = false;
+  let leaving = false;
   const listeners: (() => void)[] = [];
   const topbar = document.querySelector<HTMLElement>(".topbar")!;
   const updateInset = (): void => reader.style.setProperty("--reader-toolbar-top", `${topbar.getBoundingClientRect().height}px`);
@@ -57,19 +62,21 @@ export function initializeReaderControls(actions: ControlActions) {
     } catch (error) {
       ownsFullscreen = false;
       console.warn("Unable to change reader fullscreen", error);
-      actions.announce("Fullscreen could not be changed. You can continue reading.");
+      if (!destroyed && !leaving) actions.announce("Fullscreen could not be changed. You can continue reading.");
     } finally { fullscreenPending = false; syncFullscreen(); }
   }
   function setHidden(hidden: boolean, focus = true): void {
     if (toolbar.hidden === hidden) return;
-    actions.layout(() => {
+    const change = (): void => {
       toolbar.hidden = hidden;
       show.hidden = !hidden;
       hide.setAttribute("aria-expanded", String(!hidden));
       show.setAttribute("aria-expanded", String(!hidden));
       if (!hidden) toolbar.scrollTop = 0;
       if (focus) (hidden ? show : document.querySelector<HTMLButtonElement>("#reader-back-button")!).focus({ preventScroll: true });
-    });
+    };
+    if (mobile.isPhone()) change(); else actions.layout(change);
+    mobile.interaction();
   }
   function sync(selectedSeries: ComicSeries | null, selectedChapter?: ComicChapter): void {
     if (series !== selectedSeries) {
@@ -87,6 +94,8 @@ export function initializeReaderControls(actions: ControlActions) {
     if (selectedChapter && index >= 0) selector.value = selectedChapter.id;
     previous.disabled = index <= 0;
     next.disabled = !series || index < 0 || index >= series.chapters.length - 1;
+    mobile.setActive(index >= 0);
+    if (index >= 0) leaving = false;
   }
   function navigate(offset: number): void {
     const chapter = series?.chapters[index + offset];
@@ -99,6 +108,17 @@ export function initializeReaderControls(actions: ControlActions) {
   }
   listen(hide, "click", () => setHidden(true));
   listen(show, "click", () => setHidden(false));
+  const syncSettings = (): void => {
+    preferences.hidden = mobile.isPhone();
+    settings.setAttribute("aria-expanded", String(!preferences.hidden));
+  };
+  listen(settings, "click", () => {
+    preferences.hidden = !preferences.hidden;
+    settings.setAttribute("aria-expanded", String(!preferences.hidden));
+    mobile.interaction();
+  });
+  const phone = window.matchMedia("(max-width: 700px)");
+  listen(phone, "change", syncSettings);
   listen(fullscreen, "click", () => { void toggleFullscreen(); });
   listen(document, "fullscreenchange", syncFullscreen);
   listen(window, "resize", updateInset);
@@ -111,12 +131,12 @@ export function initializeReaderControls(actions: ControlActions) {
   listen(help, "click", openHelp);
   listen(closeHelp, "click", () => dialog.close());
   listen(dialog, "close", () => {
-    if (!reader.hidden) (returnFocus?.isConnected && !returnFocus.closest("[hidden]") ? returnFocus : toolbar.hidden ? show : help).focus({ preventScroll: true });
+    if (!reader.hidden && !leaving && !destroyed) (returnFocus?.isConnected && !returnFocus.closest("[hidden]") ? returnFocus : toolbar.hidden ? show : help).focus({ preventScroll: true });
     returnFocus = null;
   });
   listen(document, "keydown", event => {
     const key = event as KeyboardEvent;
-    if (reader.hidden || key.defaultPrevented || key.repeat || key.ctrlKey || key.altKey || key.metaKey || key.isComposing) return;
+    if (leaving || reader.hidden || key.defaultPrevented || key.repeat || key.ctrlKey || key.altKey || key.metaKey || key.isComposing) return;
     const target = key.target;
     if (document.querySelector("dialog[open]") || target instanceof Element && target.closest('input, select, textarea, dialog, [contenteditable]:not([contenteditable="false"]), [role="textbox"]')) return;
     const shortcut = key.key.toLowerCase();
@@ -124,21 +144,27 @@ export function initializeReaderControls(actions: ControlActions) {
       h: () => setHidden(!toolbar.hidden), "[": () => navigate(-1), "]": () => navigate(1), "?": openHelp } as Record<string, (() => void) | undefined>)[shortcut];
     if (action) { key.preventDefault(); action(); }
   });
-  sync(null); syncFullscreen(); updateInset();
+  const mobile = initializeMobileReaderControls(reader, toolbar, hidden => setHidden(hidden, false));
+  sync(null); syncFullscreen(); updateInset(); syncSettings();
   return {
     sync,
+    started: mobile.restart,
+    stop: mobile.stop,
+    isPhone: mobile.isPhone,
     reset(): void {
       sync(null);
       if (dialog.open) dialog.close();
       setHidden(false, false);
     },
     leave(): void {
+      leaving = true;
+      mobile.setActive(false);
       if (ownsFullscreen) {
         ownsFullscreen = false;
         if (document.fullscreenElement) void document.exitFullscreen().catch(error => console.warn("Unable to exit fullscreen", error));
       }
       if (dialog.open) { returnFocus = null; dialog.close(); }
     },
-    destroy(): void { this.leave(); topbarObserver?.disconnect(); for (const remove of listeners) remove(); },
+    destroy(): void { destroyed = true; this.leave(); mobile.destroy(); topbarObserver?.disconnect(); for (const remove of listeners) remove(); },
   };
 }

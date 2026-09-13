@@ -2,7 +2,7 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
     <meta name="description" content="A private, offline reader for local CBZ libraries.">
     <meta name="theme-color" content="#101214">
     <link rel="icon" type="image/svg+xml" href="./favicon.svg">
@@ -17,7 +17,7 @@
         </button>
 
         <div class="topbar-actions">
-          <span class="offline-status"><span aria-hidden="true"></span> Ready offline</span>
+          <span class="offline-status"><span aria-hidden="true"></span> On-device reading</span>
           <span class="connection-status" data-folder-status>Restoring saved folder…</span>
           <button class="button button-secondary" type="button" id="folder-button" data-folder-choose disabled>Choose library folder</button>
           <button class="button button-secondary" type="button" id="rescan-button" data-library-rescan disabled>Rescan</button>
@@ -36,7 +36,7 @@
           <div class="library-summary">
             <strong data-folder-name>Local library</strong>
             <span data-folder-status>Restoring saved folder…</span>
-            <span data-library-summary>Preview · 4 sample series</span>
+            <span data-library-summary>No library connected</span>
           </div>
         </aside>
 
@@ -46,7 +46,7 @@
             <div class="view-heading">
               <div>
                 <h1>Your library</h1>
-                <p id="library-subtitle">Preview library · These sample comics are not from your folder.</p>
+                <p id="library-subtitle">Choose a local folder to start reading.</p>
               </div>
             </div>
 
@@ -81,49 +81,17 @@
               </label>
             </div>
 
-            <article class="continue-panel">
-              <div class="cover-placeholder cover-small" aria-hidden="true"><span>SA</span></div>
+            <article class="continue-panel" hidden>
               <div class="continue-details">
-                <span class="eyebrow">Preview · Continue reading</span>
-                <h2>Skybound Archive</h2>
-                <p>Chapter 12 · Page 18 of 26</p>
-                <div class="progress-track" role="progressbar" aria-label="Skybound Archive progress" aria-valuemin="0" aria-valuemax="100" aria-valuenow="64">
-                  <div class="progress-value"></div>
-                </div>
+                <span class="eyebrow">Continue reading</span>
+                <h2></h2>
+                <p></p>
+                <div class="progress-track" role="progressbar" aria-label="Reading progress" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><div class="progress-value"></div></div>
               </div>
               <button class="button button-primary" type="button" id="continue-button">Continue</button>
             </article>
-
-            <div class="section-heading">
-              <h2 id="series-heading">Preview series</h2>
-              <span id="series-count">4 series</span>
-            </div>
-
-            <div class="comic-grid" id="comic-grid">
-              <button class="comic-card" type="button" data-title="Skybound Archive" data-chapters="24">
-                <span class="cover-placeholder cover-one" aria-hidden="true"><span>SA</span></span>
-                <strong>Skybound Archive</strong>
-                <span>12 of 24 chapters</span>
-              </button>
-
-              <button class="comic-card" type="button" data-title="Glass City" data-chapters="8">
-                <span class="cover-placeholder cover-two" aria-hidden="true"><span>GC</span></span>
-                <strong>Glass City</strong>
-                <span>Completed · 8 chapters</span>
-              </button>
-
-              <button class="comic-card" type="button" data-title="The Last Signal" data-chapters="10">
-                <span class="cover-placeholder cover-three" aria-hidden="true"><span>LS</span></span>
-                <strong>The Last Signal</strong>
-                <span>3 unread chapters</span>
-              </button>
-
-              <button class="comic-card" type="button" data-title="Witchlight" data-chapters="17">
-                <span class="cover-placeholder cover-four" aria-hidden="true"><span>W</span></span>
-                <strong>Witchlight</strong>
-                <span>Unread · 17 chapters</span>
-              </button>
-            </div>
+            <div class="section-heading"><h2 id="series-heading">All series</h2><span id="series-count">0 series</span></div>
+            <div class="comic-grid" id="comic-grid"></div>
 
             <p class="empty-message" id="empty-message" hidden>No series match that search.</p>
             </div>
@@ -160,23 +128,27 @@
                   <label for="reader-chapter-select">Chapter <select id="reader-chapter-select" disabled><option value="">No chapter open</option></select></label>
                   <button id="reader-next" class="button button-secondary" type="button" disabled>Next chapter</button>
                 </div>
+                <button id="bookmark-button" class="button button-secondary" type="button" aria-pressed="false" disabled>Bookmark page</button>
+                <button id="reader-settings-button" class="button button-secondary" type="button" aria-controls="reader-preferences" aria-expanded="false">Reader settings</button>
+                <div id="reader-preferences" class="reader-preferences">
                 <label class="zoom-control">
                   <span>Zoom <output id="zoom-output">100%</output></span>
                   <input id="zoom-range" type="range" min="60" max="140" value="100">
                 </label>
-                <button id="bookmark-button" class="button button-secondary" type="button" aria-pressed="false" disabled>Bookmark page</button>
                 <button class="button button-secondary" type="button" id="fit-width-button">Fit width</button>
                 <label>Page spacing <select data-preference="spacing"><option value="none">None</option><option value="small">Small</option><option value="medium">Medium</option><option value="large">Large</option></select></label>
-                <label>Background <select data-preference="background"><option value="black">Black</option><option value="dark">Dark</option><option value="light">Light</option></select></label>
+                <label>Background <select data-preference="background"><option value="black">Black</option><option value="oled">OLED black</option><option value="dark">Dark</option><option value="light">Light</option></select></label>
                 <label class="continuation-control"><input id="reader-automatic-continuation" type="checkbox" checked> Continue automatically</label>
                 <button id="reader-fullscreen" class="button button-secondary" type="button" aria-pressed="false" hidden>Fullscreen</button>
                 <button id="reader-shortcuts" class="button button-secondary" type="button" aria-haspopup="dialog">Shortcuts</button>
+                </div>
                 <button id="hide-reader-controls" class="button button-secondary" type="button" aria-controls="reader-toolbar" aria-expanded="true">Hide controls</button>
               </div>
             </div>
 
             <p class="reader-status" id="reader-status" role="status" aria-live="polite" aria-atomic="true">No chapter open.</p>
-            <div class="pages" id="pages"></div>
+            <p id="reader-empty" class="empty-message">Choose a series and chapter from your library to start reading. <button class="button button-primary" type="button" data-view-target="library">Open library</button></p>
+            <div class="pages" id="pages" tabindex="-1"></div>
           </section>
 
           <section class="view" data-view="settings" hidden>
@@ -191,14 +163,13 @@
               <section class="settings-panel">
                 <h2>Reader</h2>
 
-                <p class="scan-status">Chapters open in vertical scroll. Zoom and Fit width are available in the reader.</p>
                 <label class="setting-row">
                   <span><strong>Automatically continue</strong><small>Prepare the following chapter near the end. Saved on this device.</small></span>
                   <input id="automatic-continuation" data-preference="automaticContinuation" type="checkbox" checked>
                 </label>
-                <label class="setting-row"><span>Zoom <output id="settings-zoom-output">100%</output></span><input data-preference="zoom" type="range" min="60" max="140" value="100"></label>
+                <label class="setting-row"><span>Desktop zoom <output id="settings-zoom-output">100%</output></span><input data-preference="zoom" type="range" min="60" max="140" value="100"></label>
                 <label class="setting-row"><span>Page spacing</span><select data-preference="spacing"><option value="none">None</option><option value="small">Small</option><option value="medium">Medium</option><option value="large">Large</option></select></label>
-                <label class="setting-row"><span>Reader background</span><select data-preference="background"><option value="black">Black</option><option value="dark">Dark</option><option value="light">Light</option></select></label>
+                <label class="setting-row"><span>Reader background</span><select data-preference="background"><option value="black">Black</option><option value="oled">OLED black</option><option value="dark">Dark</option><option value="light">Light</option></select></label>
                 <h3>Local reading backup</h3>
                 <p id="backup-explanation" class="scan-status">Connect a library to back up its reading data.</p>
                 <div class="connection-actions"><button id="export-reading-button" class="button button-secondary" type="button" disabled>Export reading data</button><button id="import-reading-button" class="button button-secondary" type="button" disabled>Import reading data</button></div>
@@ -213,7 +184,7 @@
                   <strong data-folder-name>Local library</strong>
                   <span class="connection-status" data-folder-status>Restoring saved folder…</span>
                   <p data-folder-description>Checking the saved folder without requesting permission.</p>
-                  <p data-library-summary>Preview · 4 sample series</p>
+                  <p data-library-summary>No library connected</p>
                   <div class="connection-actions">
                     <button class="button button-secondary full-width" type="button" id="settings-folder-button" data-folder-choose disabled>Choose library folder</button>
                     <button class="button button-secondary full-width" type="button" data-folder-reconnect hidden>Reconnect folder</button>
@@ -235,7 +206,7 @@
         <button class="nav-button active" type="button" data-view-target="library" aria-pressed="true">Library</button>
         <button class="nav-button" type="button" data-view-target="reader" aria-pressed="false">Reader</button>
         <button class="nav-button" type="button" data-view-target="bookmarks" aria-pressed="false">Bookmarks</button>
-            <button class="nav-button" type="button" data-view-target="settings" aria-pressed="false">Settings</button>
+        <button class="nav-button" type="button" data-view-target="settings" aria-pressed="false">Settings</button>
       </nav>
     </div>
 

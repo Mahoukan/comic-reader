@@ -57,7 +57,7 @@ export function parseBackup(text: string): ReadingBackup {
   if (!object(data.preferences)) throw new Error("Invalid reader preferences.");
   exactKeys(data.preferences, ["automaticContinuation", "zoom", "spacing", "background"]);
   if (typeof data.preferences.automaticContinuation !== "boolean" || typeof data.preferences.zoom !== "number" || !Number.isFinite(data.preferences.zoom)
-    || !["none", "small", "medium", "large"].includes(data.preferences.spacing as string) || !["black", "dark", "light"].includes(data.preferences.background as string)) throw new Error("Invalid reader preferences.");
+    || !["none", "small", "medium", "large"].includes(data.preferences.spacing as string) || !["black", "oled", "dark", "light"].includes(data.preferences.background as string)) throw new Error("Invalid reader preferences.");
   data.preferences.zoom = Math.round(Math.max(60, Math.min(140, data.preferences.zoom)));
   data.preferences = validatePreferences(data.preferences);
   return data as unknown as ReadingBackup;

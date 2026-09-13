@@ -54,6 +54,7 @@ export function initializeReaderView(
   const sections = new Map<number, ChapterSection>();
   const pageTargets = new Map<Element, { section: ChapterSection; slot: PageSlot }>();
   const endTargets = new Map<Element, ChapterSection>();
+  const subscriptions: (() => void)[] = [];
   let session: ReadingSession | null = null;
   const bookmarkButton = document.querySelector<HTMLButtonElement>("#bookmark-button")!;
   let bookmarking = false;
@@ -104,7 +105,7 @@ export function initializeReaderView(
     finally { bookmarking = false; syncBookmark(); }
   };
   bookmarkButton.addEventListener("click", toggleBookmark);
-  data.subscribe(syncBookmark);
+  subscriptions.push(data.subscribe(syncBookmark));
   function applyPreferences(): void {
     const prefs = data.preferences; setZoom(prefs.zoom);
     automatic.checked = readerAutomatic.checked = prefs.automaticContinuation;
@@ -113,10 +114,10 @@ export function initializeReaderView(
     for (const view of sections.values()) if (session) updateBoundary(session, view);
   }
   let appliedPreferences = "";
-  data.subscribe(() => {
+  subscriptions.push(data.subscribe(() => {
     const signature = JSON.stringify(data.preferences);
     if (signature !== appliedPreferences) { appliedPreferences = signature; applyPreferences(); }
-  });
+  }));
   let pageObserver: IntersectionObserver | null = null;
   let endObserver: IntersectionObserver | null = null;
   let resizeObserver: ResizeObserver | null = null;
@@ -125,7 +126,6 @@ export function initializeReaderView(
   let generation = 0;
   let destroyed = false;
   let endedSeries = false;
-  let openingSelection = false;
   let startingSelection: { series: ComicSeries; chapter: ComicChapter } | null = null;
 
   function button(text: string, action: () => void): HTMLButtonElement {
@@ -147,6 +147,7 @@ export function initializeReaderView(
   function clear(save = true, leaving = true): Promise<void> {
     if (save) { trackVisible(false); capture(); flushProgress(); }
     else { window.clearTimeout(saveTimer); pending = null; pendingToken = null; }
+    controls.stop();
     restoring = false; restore = undefined;
     generation++;
     if (frame) cancelAnimationFrame(frame);
@@ -157,13 +158,13 @@ export function initializeReaderView(
     const previous = session;
     session = null;
     syncBookmark();
-    openingSelection = false;
     startingSelection = null;
     if (leaving) { controls.leave(); controls.reset(); }
     // close() revokes URLs synchronously, then waits for pending operations.
     const closing = previous?.close();
     sections.clear(); pageTargets.clear(); endTargets.clear();
     pagesElement.replaceChildren();
+    document.querySelector<HTMLElement>("#reader-empty")!.hidden = false;
     endedSeries = false;
     title.textContent = "Reader";
     chapterName.textContent = "Choose a chapter from your library.";
@@ -267,7 +268,7 @@ export function initializeReaderView(
   }
 
   function readingLine(): number {
-    const toolbarBottom = document.querySelector<HTMLElement>(".reader-toolbar")!.getBoundingClientRect().bottom;
+    const toolbarBottom = controls.isPhone() ? 0 : document.querySelector<HTMLElement>(".reader-toolbar")!.getBoundingClientRect().bottom;
     return Math.max(0, toolbarBottom) + Math.max(0, window.innerHeight - Math.max(0, toolbarBottom)) * 0.35;
   }
 
@@ -452,7 +453,7 @@ export function initializeReaderView(
     capture(); syncBookmark();
     const endRect = visible.end.getBoundingClientRect();
     if (prepare && automatic.checked && endRect.top <= window.innerHeight * 2 && endRect.bottom >= 0) void active.prepareNext(active.currentIndex);
-    if (active.currentIndex === active.series.chapters.length - 1 && endRect.top >= Math.max(0, document.querySelector<HTMLElement>(".reader-toolbar")!.getBoundingClientRect().bottom) && endRect.bottom <= window.innerHeight - 64 && !endedSeries) {
+    if (active.currentIndex === active.series.chapters.length - 1 && endRect.top >= (controls.isPhone() ? 0 : Math.max(0, document.querySelector<HTMLElement>(".reader-toolbar")!.getBoundingClientRect().bottom)) && endRect.bottom <= window.innerHeight - 64 && !endedSeries) {
       capture(true);
       endedSeries = true;
       status.textContent = `End of ${active.currentChapter.displayName}. End of series.`;
@@ -478,8 +479,8 @@ export function initializeReaderView(
     void clear(true, false);
     restore = position; restoring = Boolean(position);
     const operation = generation;
-    openingSelection = true;
     startingSelection = { series, chapter };
+    document.querySelector<HTMLElement>("#reader-empty")!.hidden = true;
     controls.sync(series, chapter);
     title.textContent = series.name;
     chapterName.textContent = chapter.displayName;
@@ -487,7 +488,9 @@ export function initializeReaderView(
     status.textContent = restoring ? "Restoring reading position..." : "Opening chapter...";
     applyPreferences();
     if (!position) window.scrollTo({ top: 0, behavior: "instant" });
-    if (focusBack) (document.querySelector<HTMLElement>("#reader-toolbar")!.hidden
+    controls.started();
+    if (focusBack && controls.isPhone()) pagesElement.focus({ preventScroll: true });
+    else if (focusBack) (document.querySelector<HTMLElement>("#reader-toolbar")!.hidden
       ? document.querySelector<HTMLButtonElement>("#show-reader-controls")! : backButton).focus({ preventScroll: true });
     transition = transition.then(async () => {
       if (generation !== operation) return;
@@ -503,7 +506,6 @@ export function initializeReaderView(
         },
       });
       session = active;
-      openingSelection = false;
       if (typeof IntersectionObserver === "function") {
         const margin = `${Math.max(window.innerHeight, 600)}px 0px`;
         pageObserver = new IntersectionObserver(entries => {
@@ -526,24 +528,9 @@ export function initializeReaderView(
     }).catch(error => {
       if (generation !== operation) return;
       console.warn("Unable to start reading session", error);
-      openingSelection = false;
       status.textContent = "This reading session could not be started. Retry the chapter or return to the series.";
       pagesElement.replaceChildren(button("Retry chapter", () => open(series, chapter)), button("Back to series", goBack));
     });
-  }
-
-  function preview(): void {
-    if (destroyed) return;
-    void clear();
-    applyPreferences();
-    title.textContent = "Skybound Archive · Preview";
-    chapterName.textContent = "Sample pages · No local chapter open";
-    status.textContent = "Preview reader. Choose a real chapter from a connected library.";
-    backButton.focus();
-    for (const number of [1, 2]) {
-      const page = document.createElement("div"); page.className = "comic-page"; page.textContent = `Preview page ${number}`;
-      pagesElement.append(page);
-    }
   }
 
   const onZoom = (): void => data.setPreferences({ zoom: Number(zoom.value) });
@@ -581,9 +568,11 @@ export function initializeReaderView(
   document.addEventListener("visibilitychange", onHidden);
   const onPageHide = (event: PageTransitionEvent): void => { data.flushPreferences(); if (event.persisted) void clear(); else destroy(); };
   const destroy = (): void => {
+    if (destroyed) return;
     destroyed = true;
     void clear();
     controls.destroy();
+    for (const unsubscribe of subscriptions) unsubscribe();
     zoom.removeEventListener("input", onZoom);
     document.querySelector("#fit-width-button")!.removeEventListener("click", fitWidth);
     backButton.removeEventListener("click", goBack);
@@ -598,5 +587,5 @@ export function initializeReaderView(
   };
   window.addEventListener("pagehide", onPageHide);
   applyPreferences(); syncBookmark();
-  return { open, preview, close: () => clear(), closeWithoutSaving: () => clear(false), destroy, resetReadingData: () => { window.clearTimeout(saveTimer); pending = null; pendingToken = null; }, isOpen: () => session !== null || openingSelection };
+  return { open, close: () => clear(), closeWithoutSaving: () => clear(false), destroy };
 }

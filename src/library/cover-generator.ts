@@ -1,7 +1,7 @@
 import { openChapter } from "../reader/cbz-reader";
 import { MAX_THUMBNAIL_BYTES } from "../storage/cover-thumbnails";
 
-export interface GeneratedCover { blob: Blob; width: number; height: number; mimeType: string }
+interface GeneratedCover { blob: Blob; width: number; height: number; mimeType: string }
 const MAX_DECODED_PIXELS = 40_000_000;
 const MAX_DECODED_DIMENSION = 16384;
 function checkDimensions(width: number, height: number): void {

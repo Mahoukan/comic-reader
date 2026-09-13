@@ -6,9 +6,9 @@ export interface CoverThumbnailRecord {
   mimeType: string; width: number; height: number; blob: Blob; updatedAt: number;
 }
 export interface CoverSource { sourceChapterId: string; sourceFilename: string; sourceSize: number; sourceLastModified: number }
-export const coverKey = (name: string, seriesId: string): string => JSON.stringify([name, seriesId]);
+const coverKey = (name: string, seriesId: string): string => JSON.stringify([name, seriesId]);
 export const MAX_THUMBNAIL_BYTES = 1024 * 1024;
-export function validThumbnail(value: unknown): value is CoverThumbnailRecord {
+function validThumbnail(value: unknown): value is CoverThumbnailRecord {
   if (!value || typeof value !== "object") return false;
   const r = value as CoverThumbnailRecord;
   return [r.libraryName, r.seriesId, r.seriesName, r.sourceChapterId, r.sourceFilename].every(v => typeof v === "string" && v.length <= 2048)
@@ -29,6 +29,7 @@ export class CoverThumbnails {
   private writes: Promise<void> = Promise.resolve();
   private epochs = new Map<string, number>();
   private unavailable = false;
+  private released = false;
   constructor(private explain: () => void) {}
   private failure(error: unknown): void {
     if (!this.unavailable) { console.warn("Cover cache storage unavailable", error); this.unavailable = true; this.explain(); }
@@ -38,6 +39,7 @@ export class CoverThumbnails {
     while (this.memory.size > 24) this.memory.delete(this.memory.keys().next().value!);
   }
   async get(name: string, seriesId: string): Promise<CoverThumbnailRecord | null> {
+    if (this.released) return null;
     const key = coverKey(name, seriesId);
     const epoch = this.epochs.get(name) ?? 0;
     const memory = this.memory.get(key);
@@ -45,7 +47,7 @@ export class CoverThumbnails {
     if (this.unavailable) return null;
     try {
       const value: unknown = await operate("readonly", s => s.get(key), "covers");
-      if (epoch !== (this.epochs.get(name) ?? 0)) return null;
+      if (this.released || epoch !== (this.epochs.get(name) ?? 0)) return null;
       if (!validThumbnail(value) || value.libraryName !== name || value.seriesId !== seriesId) return null;
       this.remember(key, value); return value;
     } catch (error) { this.failure(error); return null; }
@@ -53,7 +55,7 @@ export class CoverThumbnails {
   async put(record: CoverThumbnailRecord, current: () => boolean): Promise<void> {
     if (!validThumbnail(record)) throw new Error("Generated cover thumbnail is invalid.");
     const epoch = this.epochs.get(record.libraryName) ?? 0;
-    const valid = (): boolean => current() && epoch === (this.epochs.get(record.libraryName) ?? 0);
+    const valid = (): boolean => !this.released && current() && epoch === (this.epochs.get(record.libraryName) ?? 0);
     if (!valid()) return;
     const key = coverKey(record.libraryName, record.seriesId);
     this.remember(key, record);
@@ -99,4 +101,5 @@ export class CoverThumbnails {
   async prune(name: string, seriesIds: Set<string>, current: () => boolean): Promise<void> {
     if (current()) await this.removeWhere(name, id => !seriesIds.has(id), current);
   }
+  release(): void { this.released = true; this.memory.clear(); }
 }

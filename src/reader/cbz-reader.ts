@@ -5,7 +5,6 @@ import { ARCHIVE_LIMITS, ArchiveError, checkImageSize, imageMimeType } from "./a
 export interface ComicPage {
   id: string;
   filename: string;
-  displayName: string;
   mimeType: string;
 }
 
@@ -48,11 +47,13 @@ export async function openChapter(handle: FileSystemFileHandle, signal: AbortSig
     controller.signal.throwIfAborted();
     // Native getFile cannot be aborted; stop waiting so rapid chapter changes
     // can finish cleanup without letting its late result open an old archive.
+    let removeFileAbort = (): void => {};
     const file = await new Promise<File>((resolve, reject) => {
       const aborted = (): void => reject(controller.signal.reason ?? new DOMException("Chapter closed", "AbortError"));
       controller.signal.addEventListener("abort", aborted, { once: true });
-      void handle.getFile().then(resolve, reject).finally(() => controller.signal.removeEventListener("abort", aborted));
-    });
+      removeFileAbort = () => controller.signal.removeEventListener("abort", aborted);
+      void handle.getFile().then(resolve, reject);
+    }).finally(() => removeFileAbort());
     controller.signal.throwIfAborted();
     // Bundled ZIP code uses browser-native codecs; no worker or external WASM downloads.
     reader = new ZipReader(new BlobReader(file), {
@@ -73,7 +74,7 @@ export async function openChapter(handle: FileSystemFileHandle, signal: AbortSig
       checkImageSize(entry.uncompressedSize);
       if (entry.encrypted) throw new ArchiveError("Encrypted chapters are not supported. Choose an unencrypted CBZ.");
       if (![0, 8].includes(entry.compressionMethod)) throw new ArchiveError("This chapter uses an unsupported ZIP compression format.");
-      const page: ComicPage = { id: String(entryCount), filename: entry.filename, displayName: entry.filename.split("/").pop()!, mimeType };
+      const page: ComicPage = { id: String(entryCount), filename: entry.filename, mimeType };
       pages.push(page);
       entries.set(page.id, entry);
     }

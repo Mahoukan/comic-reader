@@ -27,6 +27,7 @@ export function initializeCoverView(notify: (message: string) => void) {
   let clearing = false;
   let destroyed = false;
   let visible = true;
+  let fallbackFrame = 0;
 
   function settings(): void {
     clearButton.disabled = !root || clearing || destroyed;
@@ -36,12 +37,14 @@ export function initializeCoverView(notify: (message: string) => void) {
   }
   function release(view: CoverCard): void {
     if (view.url) URL.revokeObjectURL(view.url);
-    view.url = null; view.cover.querySelector("img")?.remove();
+    view.url = null;
+    const image = view.cover.querySelector("img");
+    image?.removeAttribute("src"); image?.remove();
     view.cover.classList.remove("has-cover");
   }
   function detach(): void {
     observer?.disconnect(); observer = null;
-    for (const view of cards.values()) release(view);
+    for (const view of cards.values()) { release(view); view.retry.onclick = null; }
     cards.clear(); queue = [];
   }
   function valid(job: CoverJob): boolean {
@@ -102,12 +105,14 @@ export function initializeCoverView(notify: (message: string) => void) {
     let record = await cache.get(job.root.name, job.series.id);
     if (!valid(job)) return;
     if (!record || !remembered || !matchesSource(record, remembered)) {
+      let removeFileAbort = (): void => {};
       const file = await new Promise<File>((resolve, reject) => {
         const abort = (): void => reject(new DOMException("Cover cancelled", "AbortError"));
         if (job.signal.aborted) { abort(); return; }
         job.signal.addEventListener("abort", abort, { once: true });
-        void chapter.fileHandle.getFile().then(resolve, reject).finally(() => job.signal.removeEventListener("abort", abort));
-      });
+        removeFileAbort = () => job.signal.removeEventListener("abort", abort);
+        void chapter.fileHandle.getFile().then(resolve, reject);
+      }).finally(() => removeFileAbort());
       if (!valid(job)) return;
       const source: CoverSource = { sourceChapterId: chapter.id, sourceFilename: chapter.name, sourceSize: file.size, sourceLastModified: file.lastModified };
       if (!record || !matchesSource(record, source)) {
@@ -122,6 +127,7 @@ export function initializeCoverView(notify: (message: string) => void) {
     for (const view of cards.values()) if (view.series.id === job.series.id) display(view, record);
   }
   function observe(): void {
+    observer?.disconnect(); observer = null;
     if (!visible || destroyed) return;
     if (typeof IntersectionObserver === "function") {
       observer = new IntersectionObserver(entries => {
@@ -168,21 +174,33 @@ export function initializeCoverView(notify: (message: string) => void) {
     const currentRoot = root; const version = generation;
     if (currentRoot) await cache.prune(currentRoot.name, new Set(series.map(s => s.id)), () => root === currentRoot && generation === version);
   }
-  clearButton.addEventListener("click", async () => {
+  const clearCovers = async (): Promise<void> => {
     const currentRoot = root; if (!currentRoot || clearing) return;
     clearing = true; reset(currentRoot);
     try { await cache.clear(currentRoot.name); notify("Cached covers cleared. Covers regenerate as cards approach the viewport."); }
     finally { clearing = false; settings(); }
     // The library owns card creation; this event asks it to rebind current cards.
-    clearButton.dispatchEvent(new Event("covers-cleared"));
-  });
+    if (!destroyed) clearButton.dispatchEvent(new Event("covers-cleared"));
+  };
+  clearButton.addEventListener("click", clearCovers);
   function setVisible(value: boolean): void {
     if (visible === value) return;
     visible = value; observer?.disconnect(); observer = null; queue = [];
     for (const view of cards.values()) { view.near = false; if (!value) release(view); }
     if (value) observe();
   }
-  window.addEventListener("scroll", refreshFallback, { passive: true }); window.addEventListener("resize", refreshFallback);
-  const destroy = (): void => { if (destroyed) return; reset(null); destroyed = true; window.removeEventListener("scroll", refreshFallback); window.removeEventListener("resize", refreshFallback); settings(); };
+  const scheduleFallback = (): void => {
+    if (destroyed || !visible || typeof IntersectionObserver === "function" || fallbackFrame) return;
+    fallbackFrame = requestAnimationFrame(() => { fallbackFrame = 0; refreshFallback(); });
+  };
+  window.addEventListener("scroll", scheduleFallback, { passive: true }); window.addEventListener("resize", scheduleFallback);
+  const destroy = (): void => {
+    if (destroyed) return;
+    reset(null); destroyed = true; cache.release();
+    if (fallbackFrame) cancelAnimationFrame(fallbackFrame);
+    fallbackFrame = 0;
+    clearButton.removeEventListener("click", clearCovers);
+    window.removeEventListener("scroll", scheduleFallback); window.removeEventListener("resize", scheduleFallback); settings();
+  };
   settings(); return { bind, reset, prune, setVisible, destroy };
 }

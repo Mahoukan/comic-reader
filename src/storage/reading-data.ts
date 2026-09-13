@@ -25,9 +25,9 @@ export class ReadingData {
   private clock = 0;
   constructor(private warn: (message: string) => void) {}
   private failure(error: unknown): void {
-    console.warn("Reading data storage unavailable", error);
     this.available = false;
     if (!this.warned) {
+      console.warn("Reading data storage unavailable", error);
       this.warned = true;
       this.warn("Reading data cannot be saved. Bookmarks, read-state changes and backups are unavailable. Reading and preferences still work for this session.");
     }
@@ -54,7 +54,10 @@ export class ReadingData {
     for (const r of [...this.records.values(), ...this.bookmarks.values(), ...this.statuses.values()]) this.clock = Math.max(this.clock, r.updatedAt);
     this.changed();
   }
-  subscribe(listener: () => void): void { this.listeners.add(listener); }
+  subscribe(listener: () => void): () => void {
+    this.listeners.add(listener);
+    return () => { this.listeners.delete(listener); };
+  }
   private changed(): void { this.listeners.forEach(listener => listener()); }
   private timestamp(): number { return this.clock = Math.max(Date.now(), this.clock + 1); }
   all(name: string): ReadingProgress[] { return [...this.records.values()].filter(r => r.libraryName === name); }

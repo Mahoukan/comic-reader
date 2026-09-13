@@ -1,7 +1,7 @@
 import { checkFolderAvailable, checkReadPermission, chooseFolder, requestReadPermission, supportsFolderAccess } from "./folder-access";
 import { getSavedFolder, removeSavedFolder, saveFolder } from "../storage/database";
 
-export type ConnectionState = "unsupported" | "disconnected" | "connected" | "permission" | "denied" | "unavailable" | "restoring";
+type ConnectionState = "unsupported" | "disconnected" | "connected" | "permission" | "denied" | "unavailable" | "restoring";
 export interface LibraryConnection {
   state: ConnectionState;
   handle: FileSystemDirectoryHandle | null;
@@ -137,12 +137,18 @@ export function initializeLibraryConnection(
     busy = true;
     render();
     try {
-      await removeSavedFolder();
+      let removalFailed = false;
+      try { await removeSavedFolder(); }
+      catch (error) {
+        console.warn("Unable to remove saved library folder", error);
+        removalFailed = true;
+      }
       handle = null;
       state = "disconnected";
       storageMessage = actionMessage = "";
+      if (removalFailed) storageMessage = "Disconnected for this session. Storage is unavailable, so the earlier saved folder may restore next time.";
       dialog.close();
-      notify("Folder disconnected. Local files are unchanged.");
+      notify(removalFailed ? "Folder disconnected for this session. Its saved connection could not be removed." : "Folder disconnected. Local files are unchanged.");
     } catch (error) {
       console.warn("Unable to disconnect saved library folder", error);
       actionMessage = "The saved connection could not be removed. Please retry disconnecting.";

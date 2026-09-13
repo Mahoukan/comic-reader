@@ -11,14 +11,12 @@ import { naturalCompare } from "./natural-sort";
 const count = (value: number, noun: string): string => `${value} ${noun}${value === 1 ? "" : "s"}`;
 
 export function initializeLibraryView(
-  openPreview: () => void,
   reportAccessFailure: (root: FileSystemDirectoryHandle, error: unknown) => Promise<void>,
   openChapter: (series: ComicSeries, chapter: ComicChapter, position?: ReadingAnchor) => void,
   data: ReadingData,
   notify: (message: string) => void,
 ): { setVisible: (visible: boolean) => void; destroy: () => void; resolveChapter: (seriesId: string, chapterId: string) => { series: ComicSeries; chapter: ComicChapter } | null; subscribeScan: (listener: () => void) => void; updateConnection: (connection: LibraryConnection) => void; resetDetail: () => void; returnToSeries: (series: ComicSeries, chapter: ComicChapter) => void } {
   const grid = document.querySelector<HTMLDivElement>("#comic-grid")!;
-  const samples = Array.from(grid.querySelectorAll<HTMLButtonElement>(".comic-card"));
   const search = document.querySelector<HTMLInputElement>("#library-search")!;
   const sort = document.querySelector<HTMLSelectElement>("#library-sort")!;
   const visibleCount = document.querySelector<HTMLElement>("#series-count")!;
@@ -46,6 +44,9 @@ export function initializeLibraryView(
   let returnCard: HTMLButtonElement | null = null;
   let viewVisible = true;
   const covers = initializeCoverView(notify);
+  const subscriptions: (() => void)[] = [];
+  const lifetime = new AbortController();
+  let destroyed = false;
 
   function resetDetail(restoreFocus = false): void {
     const wasOpen = !detail.hidden;
@@ -130,37 +131,23 @@ export function initializeLibraryView(
 
   function renderLibrary(): void {
     const query = search.value.trim().toLocaleLowerCase();
-    const real = Boolean(root);
-    subtitle.textContent = real ? "Your local series · Choose a series and chapter to read." : "Preview library · These sample comics are not from your folder.";
-    heading.textContent = real ? "All series" : "Preview series";
-    continuePanel.hidden = real;
-    let total = 0;
-    let visible = 0;
-    if (real) {
-      const series = [...(result?.series ?? [])];
-      total = series.length;
-      series.sort((a, b) => sort.value === "chapters"
-        ? b.chapters.length - a.chapters.length || naturalCompare(a.name, b.name)
-        : naturalCompare(a.name, b.name));
-      const filtered = series.filter(item => item.name.toLocaleLowerCase().includes(query));
-      visible = filtered.length;
-      covers.bind([], grid);
-      grid.replaceChildren(...filtered.map(realCard));
-      covers.bind(filtered, grid);
-    } else {
-      const sorted = [...samples].sort((a, b) => sort.value === "chapters"
-        ? Number(b.dataset.chapters) - Number(a.dataset.chapters) || naturalCompare(a.dataset.title ?? "", b.dataset.title ?? "")
-        : naturalCompare(a.dataset.title ?? "", b.dataset.title ?? ""));
-      sorted.forEach(card => card.hidden = !(card.dataset.title ?? "").toLocaleLowerCase().includes(query));
-      total = samples.length;
-      visible = sorted.filter(card => !card.hidden).length;
-      covers.bind([], grid);
-      grid.replaceChildren(...sorted);
-    }
+    subtitle.textContent = root ? "Your local series - Choose a series and chapter to read." : "Choose a local folder to start reading.";
+    heading.textContent = "All series";
+    const series = [...(result?.series ?? [])];
+    const total = series.length;
+    series.sort((a, b) => sort.value === "chapters"
+      ? b.chapters.length - a.chapters.length || naturalCompare(a.name, b.name)
+      : naturalCompare(a.name, b.name));
+    const filtered = series.filter(item => item.name.toLocaleLowerCase().includes(query));
+    const visible = filtered.length;
+    covers.bind([], grid);
+    grid.replaceChildren(...filtered.map(realCard));
+    covers.bind(filtered, grid);
+    search.disabled = sort.disabled = !root || scanning;
     visibleCount.textContent = query ? `${visible} of ${total} series` : `${total} series`;
     emptySearch.hidden = visible !== 0 || total === 0;
     emptySearch.textContent = "No series match your search. Try another name or clear the search.";
-    const summary = real ? result ? `${result.series.length} series · ${count(result.chapterCount, "chapter")}` : "Library not scanned yet" : "Preview · 4 sample series";
+    const summary = root ? result ? `${result.series.length} series - ${count(result.chapterCount, "chapter")}` : "Library not scanned yet" : "No library connected";
     document.querySelectorAll<HTMLElement>("[data-library-summary]").forEach(element => element.textContent = summary);
     refreshProgress();
     scanListeners.forEach(listener => listener());
@@ -197,22 +184,21 @@ export function initializeLibraryView(
         }
       }
     }
-    continuePanel.hidden = Boolean(root) && !continuation;
-    continuePanel.querySelector<HTMLElement>(".eyebrow")!.textContent = root ? "Continue reading" : "Preview - Continue reading";
-    continuePanel.querySelector("h2")!.textContent = continuation?.series.name ?? "Skybound Archive";
-    continuePanel.querySelector("p")!.textContent = continuation ? `${continuation.chapter.displayName} - Page ${Math.min(continuation.record.pageIndex + 1, continuation.record.pageCount)} of ${continuation.record.pageCount}` : "Chapter 12 - Page 18 of 26";
-    const percent = continuation ? seriesProgress(continuation.series, records, data.allStatuses(root!.name)).percent : 64;
+    continuePanel.hidden = !continuation || scanning;
+    if (!continuation) return;
+    continuePanel.querySelector("h2")!.textContent = continuation.series.name;
+    continuePanel.querySelector("p")!.textContent = `${continuation.chapter.displayName} - Page ${Math.min(continuation.record.pageIndex + 1, continuation.record.pageCount)} of ${continuation.record.pageCount}`;
+    const percent = seriesProgress(continuation.series, records, data.allStatuses(root!.name)).percent;
     const bar = continuePanel.querySelector<HTMLElement>("[role=progressbar]")!;
-    bar.setAttribute("aria-label", `${continuation?.series.name ?? "Skybound Archive"} reading progress`);
+    bar.setAttribute("aria-label", `${continuation.series.name} reading progress`);
     bar.setAttribute("aria-valuenow", String(percent));
     bar.querySelector<HTMLElement>(".progress-value")!.style.width = `${percent}%`;
   }
-  data.subscribe(refreshProgress);
-  data.subscribe(() => { document.querySelector<HTMLButtonElement>("#confirm-series-state")!.disabled = data.busy || !data.available; });
+  subscriptions.push(data.subscribe(refreshProgress));
+  subscriptions.push(data.subscribe(() => { document.querySelector<HTMLButtonElement>("#confirm-series-state")!.disabled = data.busy || !data.available; }));
   document.querySelector("#continue-button")!.addEventListener("click", () => {
     if (continuation && root && result) openChapter(continuation.series, continuation.chapter, continuation.record);
-    else if (!root) openPreview();
-  });
+  }, { signal: lifetime.signal });
 
   function updateButtons(): void {
     rescanButtons.forEach(button => button.disabled = !root || scanning || connection.busy);
@@ -231,13 +217,13 @@ export function initializeLibraryView(
   }
 
   async function scan(): Promise<void> {
-    if (!root || scanning) return;
+    if (destroyed || !root || scanning) return;
     cancelScan();
     const currentRoot = root;
     const currentGeneration = generation;
     const controller = new AbortController();
     abort = controller;
-    const current = (): boolean => generation === currentGeneration && root === currentRoot;
+    const current = (): boolean => !destroyed && generation === currentGeneration && root === currentRoot;
     scanning = true;
     status.textContent = "Scanning library folders…";
     updateButtons();
@@ -266,7 +252,7 @@ export function initializeLibraryView(
         await reportAccessFailure(currentRoot, error);
       }
     } finally {
-      if (current()) { scanning = false; abort = null; updateButtons(); scanListeners.forEach(listener => listener()); }
+      if (current()) { scanning = false; abort = null; updateButtons(); search.disabled = sort.disabled = !root; refreshProgress(); scanListeners.forEach(listener => listener()); }
     }
   }
 
@@ -283,9 +269,10 @@ export function initializeLibraryView(
     }
     if (!root) {
       status.textContent = next.state === "restoring" ? "Restoring folder connection…"
-        : ["permission", "denied"].includes(next.state) ? "Waiting for read permission. Preview data is shown."
-          : next.state === "unavailable" ? "Folder is unavailable. Reconnect or choose another folder. Preview data is shown."
-            : "No real library connected. Preview data is shown.";
+        : next.state === "unsupported" ? "Local folder reading requires a browser with directory-picker support, such as desktop Chrome or Edge, on HTTPS or localhost."
+          : ["permission", "denied"].includes(next.state) ? "Reconnect your folder to grant read permission."
+          : next.state === "unavailable" ? "Folder is unavailable. Reconnect or choose another folder."
+            : "Choose a local folder to load your library.";
     }
     updateButtons();
   }
@@ -299,28 +286,36 @@ export function initializeLibraryView(
     document.querySelector("#series-state-title")!.textContent = seriesAction.read ? "Mark series read?" : "Mark series unread?";
     document.querySelector("#series-state-description")!.textContent = `${detailSeries.name}: ${seriesAction.read ? "Mark all currently scanned chapters read. Progress and bookmarks stay saved." : "Remove all progress and manual read states for this series. Bookmarks stay saved."} Comic files stay unchanged.`;
     seriesDialog.showModal();
-  }));
-  document.querySelector("#cancel-series-state")!.addEventListener("click", () => seriesDialog.close());
-  seriesDialog.addEventListener("close", () => { seriesInitiator?.focus(); seriesAction = null; });
+  }, { signal: lifetime.signal }));
+  document.querySelector("#cancel-series-state")!.addEventListener("click", () => seriesDialog.close(), { signal: lifetime.signal });
+  seriesDialog.addEventListener("close", () => { seriesInitiator?.focus(); seriesAction = null; }, { signal: lifetime.signal });
   document.querySelector("#confirm-series-state")!.addEventListener("click", async () => {
     const action = seriesAction;
     if (!action || root !== action.root || !result?.series.includes(action.series) || data.busy || !data.available) { seriesDialog.close(); return; }
     try { await data.markChapters(root.name, action.series.id, action.series.chapters.map(c => c.id), action.read, true); notify(action.read ? "Series marked read." : "Series marked unread. Bookmarks retained."); }
     catch (error) { notify(error instanceof Error ? error.message : "Series state could not be changed."); }
     seriesDialog.close();
-  });
-  samples.forEach(card => card.addEventListener("click", openPreview));
-  search.addEventListener("input", renderLibrary);
-  sort.addEventListener("change", renderLibrary);
-  document.querySelector("#back-to-library")!.addEventListener("click", () => resetDetail(true));
-  rescanButtons.forEach(button => button.addEventListener("click", () => { if (!connection.busy) void scan(); }));
-  document.querySelector("#clear-covers-button")!.addEventListener("covers-cleared", renderLibrary);
+  }, { signal: lifetime.signal });
+  search.addEventListener("input", renderLibrary, { signal: lifetime.signal });
+  sort.addEventListener("change", renderLibrary, { signal: lifetime.signal });
+  document.querySelector("#back-to-library")!.addEventListener("click", () => resetDetail(true), { signal: lifetime.signal });
+  rescanButtons.forEach(button => button.addEventListener("click", () => { if (!connection.busy) void scan(); }, { signal: lifetime.signal }));
+  document.querySelector("#clear-covers-button")!.addEventListener("covers-cleared", renderLibrary, { signal: lifetime.signal });
   renderLibrary();
   updateButtons();
   return {
     updateConnection,
     setVisible(value) { viewVisible = value; covers.setVisible(value && Boolean(detail.hidden)); },
-    destroy: covers.destroy,
+    destroy(): void {
+      if (destroyed) return;
+      destroyed = true; generation++; abort?.abort(); abort = null;
+      lifetime.abort();
+      for (const unsubscribe of subscriptions) unsubscribe();
+      scanListeners.clear();
+      if (seriesDialog.open) seriesDialog.close();
+      seriesAction = null; seriesInitiator = null;
+      covers.destroy();
+    },
     subscribeScan: listener => { scanListeners.add(listener); },
     resolveChapter(seriesId, chapterId) {
       if (!root || !result || scanning) return null;
