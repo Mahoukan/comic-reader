@@ -33,7 +33,7 @@ export function initializeLibraryConnection(
     const descriptions: Record<ConnectionState, string> = {
       unsupported: "Persistent local folder access requires a compatible Chromium-based browser such as desktop Chrome or Edge.",
       disconnected: "Choose a comic-library folder. Access is read-only and stays on this device.",
-      connected: "Read-only folder access. Chapters are opened locally only when you select them.",
+      connected: "Read-only folder access. Reading and chapter continuation happen locally on this device.",
       permission: "Your saved folder needs read permission. Click Reconnect folder to continue.",
       denied: "Read permission was denied. You can reconnect to try again or choose another folder.",
       unavailable: "The saved folder could not be opened. Check that it is still available or choose another folder.",

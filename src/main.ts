@@ -25,7 +25,7 @@ function showView(name: ViewName): void {
     button.setAttribute("aria-pressed", String(isActive));
   });
 
-  window.scrollTo({ top: 0, behavior: "smooth" });
+  window.scrollTo({ top: 0, behavior: "instant" });
 }
 
 navigationButtons.forEach((button) => {

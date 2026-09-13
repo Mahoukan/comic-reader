@@ -11,7 +11,7 @@ npm install
 npm run dev
 ```
 
-Open the local address shown in the terminal. Milestone 4 is complete: select a chapter in a real series to read its image pages vertically. The library supports natural sorting, search, chapter counts, and series detail lists. Milestone 5 will add seamless next-chapter continuation.
+Open the local address shown in the terminal. Milestone 5 is complete: real CBZ chapters continue forwards seamlessly in the vertical reader. The library supports natural sorting, search, chapter counts, and series detail lists. Milestone 6 will add reading-progress and preference persistence.
 
 Choose a folder using the header or Library/Settings controls. Its directory handle is saved in native IndexedDB on this device. On launch, the app queries read permission without prompting. If permission needs renewal, click **Reconnect folder**. **Change folder** opens a new picker; **Disconnect folder** confirms before removing the saved connection, without changing local files.
 
@@ -41,13 +41,23 @@ Scanning enumerates handles only: it does not read CBZ bytes, inspect ZIP entrie
 
 ## Reading CBZ chapters
 
-The reader uses `@zip.js/zip.js` (the native-codec build) to process one chapter at a time, entirely inside the browser. A file is read only after selecting its chapter. Its ZIP directory is inspected first; image bytes are extracted sequentially only when page placeholders approach the viewport, using IntersectionObserver. Loaded pages remain in memory until the chapter closes. No archives, filenames, metadata, or images are uploaded or persisted in IndexedDB or the service-worker cache.
+The reader uses `@zip.js/zip.js` (the native-codec build) to process a small chapter window, entirely inside the browser. Selecting a chapter starts a fresh reading session at that chapter. ZIP directories are inspected first; image bytes are extracted sequentially only when page placeholders approach the viewport, using IntersectionObserver and one shared session queue. No archives, filenames, metadata, or images are uploaded or persisted in IndexedDB or the service-worker cache.
 
 Supported page extensions are JPG, JPEG, PNG, WebP, GIF, and AVIF, case-insensitively. The browser must support decoding the image format. Images may be nested inside the archive and use the existing natural filename sorting, including their internal folder names. Directory entries, macOS metadata, named thumbnail folders/files, unsupported formats (including SVG), symbolic links, and absolute or traversal paths are ignored. Encrypted archives and compression formats other than stored/deflate are unsupported. Native deflate decompression requires a current compatible browser.
 
 Safety limits are defined in `src/reader/archive-safety.ts`: at most **5,000 archive entries**, **2,000 image pages**, and **100 MiB uncompressed per image**. Declared sizes are checked before extraction; streamed output is also bounded. Invalid archives show a chapter error; individual extraction or image-decoding failures offer a page retry without clearing the other pages.
 
-Zoom adjusts the maximum reader width from its default 720px; Fit width resets it, and images shrink to fit narrower screens while preserving their proportions. Back returns to the selected series; Library returns to the grid. Leaving the reader, opening another chapter, changing/disconnecting the folder, or destroying the reader aborts pending work, closes the ZIP reader, drops page references, and revokes all image object URLs. Stale loads cannot update a newer chapter. No next chapter is opened automatically, and reading positions are not saved yet.
+Zoom adjusts the maximum reader width from its default 720px; Fit width resets it, and images shrink to fit narrower screens while preserving their proportions. Back returns to the currently visible chapter in its series; Library returns to the grid. Leaving the reader, selecting another chapter, changing/disconnecting the folder, or losing folder permission aborts the whole session, closes every archive, removes chapter sections, and revokes all image object URLs. Stale loads cannot update a newer session. Reading positions are not saved yet.
+
+## Chapter continuation
+
+Automatic continuation defaults to enabled. An end sentinel prepares the next chapter's ZIP directory roughly one to two viewport heights before the boundary; it appends placeholders once, without eagerly extracting its images. A compact `End of [chapter]` / `[next chapter]` divider lets scrolling continue naturally. Pending preparation shows a loading message at the boundary. The Reader toggle and Settings **Automatically continue** control stay in sync for the current app session; disabling continuation gives unprepared boundaries a **Continue to next chapter** button. Already-mounted chapters remain intact.
+
+The toolbar follows the page nearest the upper-middle reading area. An 80px dead band stabilises chapter changes at boundaries. Page changes are not announced; chapter changes and blocking errors use a polite live region without moving focus. The final chapter shows **End of series** and never attempts another load.
+
+The resource window retains at most the immediately previous chapter, the current chapter, and its next chapter. Advancing releases older ZIP readers, extraction jobs, image URLs, and page DOM. The reading anchor is measured before and after removing content above the viewport, and scrolling is compensated immediately. Late image decoding above the reading area uses the same approach. You can scroll backwards across the most recent retained boundary, but older chapters and chapters before the session's starting point are not loaded backwards. A deliberate backward crossing may release a prepared chapter farther ahead, which is reopened if you advance to it later.
+
+If the next chapter fails, the completed chapter remains readable and the failed section shows its name, **Retry chapter**, and **Back to series**. Observer events do not retry or skip it automatically. Folder permission errors use the existing reconnection flow when permission is actually lost. No progress, bookmarks, or read/completed status is stored in this milestone.
 
 ## Production build
 

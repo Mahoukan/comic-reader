@@ -457,6 +457,17 @@ input[type="search"] {
   font-size: 0.8rem;
 }
 
+.reader-controls { flex-wrap: wrap; }
+
+.continuation-control {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  color: var(--muted);
+  font-size: 0.8rem;
+  min-height: 44px;
+}
+
 .text-button {
   color: var(--muted);
 }
@@ -480,6 +491,7 @@ input[type="search"] {
   margin: 0 auto;
   padding: 1.5rem 0 3rem;
   transition: width 160ms ease;
+  overflow-anchor: none;
 }
 
 .reader-status {
@@ -547,6 +559,39 @@ input[type="search"] {
   gap: 0.35rem;
   padding: 2.6rem 1rem;
   color: var(--muted);
+  text-align: center;
+}
+
+.reader-chapter { overflow-anchor: none; }
+
+.chapter-start {
+  margin: 0;
+  padding: 0.6rem 0;
+  color: var(--text);
+  font-size: 1rem;
+  overflow-wrap: anywhere;
+}
+
+.chapter-end,
+.chapter-boundary {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 0.6rem;
+  padding: 0.55rem 0;
+  color: var(--muted);
+  font-size: 0.85rem;
+  overflow-wrap: anywhere;
+}
+
+.chapter-content > p { color: var(--muted); overflow-wrap: anywhere; }
+.chapter-content > .button { margin: 0.3rem; }
+
+.chapter-boundary:empty { padding: 0; }
+
+.reader-chapter + .reader-chapter .chapter-start {
+  border-top: 1px solid var(--line);
   text-align: center;
 }
 

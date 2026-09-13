@@ -151,6 +151,7 @@
                   <input id="zoom-range" type="range" min="60" max="140" value="100">
                 </label>
                 <button class="button button-secondary" type="button" id="fit-width-button">Fit width</button>
+                <label class="continuation-control"><input id="reader-automatic-continuation" type="checkbox" checked> Continue automatically</label>
               </div>
             </div>
 
@@ -171,7 +172,11 @@
                 <h2>Reader</h2>
 
                 <p class="scan-status">Chapters open in vertical scroll. Zoom and Fit width are available in the reader.</p>
-                <p class="scan-status">Automatic chapter continuation and saved preferences are coming in later milestones.</p>
+                <label class="setting-row">
+                  <span><strong>Automatically continue</strong><small>Prepare the following chapter near the end. Applies to this session; preferences are not saved yet.</small></span>
+                  <input id="automatic-continuation" type="checkbox" checked>
+                </label>
+                <p class="scan-status">Saved reading positions and preferences are coming in Milestone 6.</p>
               </section>
 
               <section class="settings-panel">

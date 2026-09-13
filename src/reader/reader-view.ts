@@ -1,6 +1,7 @@
 import type { ComicChapter, ComicSeries } from "../library/library-scanner";
 import { ArchiveError } from "./archive-safety";
-import { openChapter, type ComicPage, type OpenedChapter } from "./cbz-reader";
+import type { ComicPage } from "./cbz-reader";
+import { ReadingSession, type SessionChapter } from "./reading-session";
 
 interface PageSlot {
   page: ComicPage;
@@ -10,6 +11,22 @@ interface PageSlot {
   retry: HTMLButtonElement;
   image: HTMLImageElement | null;
   state: "idle" | "queued" | "loading" | "loaded" | "error";
+}
+
+interface ChapterSection {
+  chapter: SessionChapter;
+  section: HTMLElement;
+  content: HTMLElement;
+  end: HTMLElement;
+  boundary: HTMLElement;
+  slots: PageSlot[];
+}
+
+function chapterError(error: unknown): string {
+  if (error instanceof ArchiveError) return error.message;
+  if (error instanceof DOMException && error.name === "NotFoundError") return "This chapter file is no longer available.";
+  if (error instanceof DOMException && ["NotAllowedError", "SecurityError"].includes(error.name)) return "This file cannot be read. Check library permission.";
+  return "This chapter could not be opened. It may be damaged, encrypted, or unsupported.";
 }
 
 export function initializeReaderView(
@@ -24,153 +41,296 @@ export function initializeReaderView(
   const backButton = document.querySelector<HTMLButtonElement>("#reader-back-button")!;
   const zoom = document.querySelector<HTMLInputElement>("#zoom-range")!;
   const zoomOutput = document.querySelector<HTMLOutputElement>("#zoom-output")!;
-  let generation = 0;
-  let controller: AbortController | null = null;
-  let archive: OpenedChapter | null = null;
-  let observer: IntersectionObserver | null = null;
+  const automatic = document.querySelector<HTMLInputElement>("#automatic-continuation")!;
+  const readerAutomatic = document.querySelector<HTMLInputElement>("#reader-automatic-continuation")!;
+  const sections = new Map<number, ChapterSection>();
+  const pageTargets = new Map<Element, { section: ChapterSection; slot: PageSlot }>();
+  const endTargets = new Map<Element, ChapterSection>();
+  let session: ReadingSession | null = null;
+  let pageObserver: IntersectionObserver | null = null;
+  let endObserver: IntersectionObserver | null = null;
+  let resizeObserver: ResizeObserver | null = null;
   let transition: Promise<void> = Promise.resolve();
-  let selection: { series: ComicSeries; chapter: ComicChapter } | null = null;
-  let slots: PageSlot[] = [];
-  let queue: PageSlot[] = [];
-  const urls = new Set<string>();
+  let frame = 0;
+  let generation = 0;
   let destroyed = false;
+  let endedSeries = false;
+  let openingSelection = false;
+  let startingSelection: { series: ComicSeries; chapter: ComicChapter } | null = null;
+
+  function button(text: string, action: () => void): HTMLButtonElement {
+    const result = document.createElement("button");
+    result.type = "button";
+    result.className = "button button-secondary";
+    result.textContent = text;
+    result.addEventListener("click", action);
+    return result;
+  }
 
   function setZoom(value: number): void {
     zoom.value = String(value);
     zoomOutput.value = `${value}%`;
     pagesElement.style.setProperty("--reader-width", `${Math.round(720 * value / 100)}px`);
+    scheduleTracking();
   }
 
   function clear(): Promise<void> {
     generation++;
-    controller?.abort();
-    controller = null;
-    observer?.disconnect();
-    observer = null;
-    queue = [];
-    for (const slot of slots) {
-      if (slot.image) { slot.image.onload = slot.image.onerror = null; slot.image.removeAttribute("src"); }
-    }
-    slots = [];
+    if (frame) cancelAnimationFrame(frame);
+    frame = 0;
+    pageObserver?.disconnect(); endObserver?.disconnect(); resizeObserver?.disconnect();
+    pageObserver = endObserver = null;
+    resizeObserver = null;
+    const previous = session;
+    session = null;
+    openingSelection = false;
+    startingSelection = null;
+    // close() revokes URLs synchronously, then waits for pending operations.
+    const closing = previous?.close();
+    sections.clear(); pageTargets.clear(); endTargets.clear();
     pagesElement.replaceChildren();
-    for (const url of urls) URL.revokeObjectURL(url);
-    urls.clear();
-    const previous = archive;
-    archive = null;
-    selection = null;
+    endedSeries = false;
     title.textContent = "Reader";
     chapterName.textContent = "Choose a chapter from your library.";
     status.textContent = "No chapter open.";
     backButton.textContent = "← Library";
-    transition = transition.catch(() => {}).then(async () => {
-      await previous?.close().catch(error => console.warn("Unable to close chapter", error));
-    });
+    transition = Promise.allSettled([transition, closing]).then(() => {});
     return transition;
   }
 
   function goBack(): void {
-    const previous = selection;
+    const previous = session;
+    const chapter = previous?.currentChapter ?? startingSelection?.chapter;
+    const series = previous?.series ?? startingSelection?.series;
     void clear();
-    if (previous) backToSeries(previous.series, previous.chapter);
+    if (series && chapter) backToSeries(series, chapter);
     else backToLibrary();
   }
 
-  async function loadSlot(slot: PageSlot, active: OpenedChapter, operation: number): Promise<void> {
-    const current = (): boolean => generation === operation && archive === active;
-    if (!current()) return;
+  function mount(active: ReadingSession, chapter: SessionChapter): void {
+    const section = document.createElement("section");
+    section.className = "reader-chapter";
+    section.dataset.chapterId = chapter.chapter.id;
+    section.dataset.chapterIndex = String(chapter.index);
+    const start = document.createElement("h2");
+    start.className = "chapter-start";
+    start.textContent = chapter.chapter.displayName;
+    start.id = `chapter-${generation}-${chapter.index}`;
+    section.setAttribute("aria-labelledby", start.id);
+    const content = document.createElement("div");
+    content.className = "chapter-content";
+    content.textContent = "Opening chapter…";
+    const end = document.createElement("div");
+    end.className = "chapter-end";
+    end.textContent = `End of ${chapter.chapter.displayName}`;
+    const boundary = document.createElement("div");
+    boundary.className = "chapter-boundary";
+    section.append(start, content, end, boundary);
+    const view: ChapterSection = { chapter, section, content, end, boundary, slots: [] };
+    sections.set(chapter.index, view);
+    pagesElement.append(section);
+    resizeObserver?.observe(section);
+    const previous = sections.get(chapter.index - 1);
+    if (previous) updateBoundary(active, previous);
+    updateBoundary(active, view);
+    scheduleTracking();
+  }
+
+  function updateBoundary(active: ReadingSession, view: ChapterSection): void {
+    view.boundary.replaceChildren();
+    view.end.hidden = !["ready", "rendering"].includes(view.chapter.state);
+    if (view.end.hidden) return;
+    const next = active.series.chapters[view.chapter.index + 1];
+    if (!next) {
+      view.boundary.textContent = "End of series";
+      view.boundary.append(button("Back to series", goBack));
+      return;
+    }
+    if (sections.has(view.chapter.index + 1)) return;
+    view.boundary.textContent = automatic.checked ? `Next: ${next.displayName}` : "";
+    // A manual fallback also keeps browsers without IntersectionObserver usable.
+    view.boundary.append(button("Continue to next chapter", () => {
+      if (session === active) void active.prepareNext(view.chapter.index);
+    }));
+  }
+
+  function removeSection(chapter: SessionChapter): void {
+    const view = sections.get(chapter.index);
+    if (!view) return;
+    const anchor = session ? sections.get(session.currentIndex)?.section : null;
+    const before = anchor && anchor !== view.section ? anchor.getBoundingClientRect().top : null;
+    for (const slot of view.slots) {
+      pageObserver?.unobserve(slot.container);
+      pageTargets.delete(slot.container);
+      if (slot.image) { slot.image.removeAttribute("src"); slot.image.remove(); }
+    }
+    view.slots = [];
+    endObserver?.unobserve(view.end); endTargets.delete(view.end);
+    resizeObserver?.unobserve(view.section);
+    view.section.remove();
+    sections.delete(chapter.index);
+    // Browser scroll anchoring is disabled so compensation is applied once.
+    if (before !== null && anchor?.isConnected) {
+      const delta = anchor.getBoundingClientRect().top - before;
+      if (delta) window.scrollBy({ top: delta, behavior: "instant" });
+    }
+    if (session) {
+      const previous = sections.get(chapter.index - 1);
+      if (previous) updateBoundary(session, previous);
+    }
+  }
+
+  function enqueue(active: ReadingSession, view: ChapterSection, slot: PageSlot): void {
+    if (session !== active || !active.isActive(view.chapter) || !["idle", "error"].includes(slot.state)) return;
+    slot.state = "queued";
+    active.enqueue(view.chapter, () => loadSlot(active, view, slot));
+  }
+
+  function readingLine(): number {
+    const toolbarBottom = document.querySelector<HTMLElement>(".reader-toolbar")!.getBoundingClientRect().bottom;
+    return Math.max(0, toolbarBottom) + Math.max(0, window.innerHeight - Math.max(0, toolbarBottom)) * 0.35;
+  }
+
+  function readingAnchor(): HTMLElement | null {
+    const line = readingLine();
+    let anchor: HTMLElement | null = null;
+    let closest = Infinity;
+    for (const view of sections.values()) for (const slot of view.slots) {
+      const rect = slot.container.getBoundingClientRect();
+      const distance = Math.max(rect.top - line, line - rect.bottom, 0);
+      if (distance < closest) { closest = distance; anchor = slot.container; }
+    }
+    return anchor;
+  }
+
+  function preserveAnchor(anchor: HTMLElement | null, before: number | null): void {
+    if (before === null || !anchor?.isConnected) return;
+    const delta = anchor.getBoundingClientRect().top - before;
+    if (delta) window.scrollBy({ top: delta, behavior: "instant" });
+  }
+
+  async function loadSlot(active: ReadingSession, view: ChapterSection, slot: PageSlot): Promise<void> {
+    const archive = view.chapter.archive;
+    const current = (): boolean => session === active && active.isActive(view.chapter) && view.chapter.archive === archive;
+    if (!archive || !current()) return;
+    view.chapter.state = "rendering";
     slot.state = "loading";
     slot.message.textContent = `Loading page ${slot.number}…`;
     slot.retry.hidden = true;
     slot.container.setAttribute("aria-busy", "true");
     let url: string | null = null;
     try {
-      const blob = await active.loadPage(slot.page);
+      const blob = await archive.loadPage(slot.page);
       if (!current()) return;
-      url = URL.createObjectURL(blob);
-      urls.add(url);
+      url = active.createURL(view.chapter, blob);
+      if (!url) return;
       const image = document.createElement("img");
-      image.alt = `Page ${slot.number}`;
+      image.alt = `${view.chapter.chapter.displayName} · Page ${slot.number}`;
       image.decoding = "async";
-      // Extraction is already lazy; native lazy loading can stall decode() on hidden images.
-      image.loading = "eager";
       image.hidden = true;
       slot.image = image;
       slot.container.append(image);
-      // decode() rejects corrupt images and can be cancelled by removing src during cleanup.
       image.src = url;
       await image.decode();
       if (!current()) return;
+      const anchor = readingAnchor();
+      const before = anchor?.getBoundingClientRect().top ?? null;
       slot.state = "loaded";
       image.hidden = false;
       slot.message.hidden = true;
       slot.container.classList.add("loaded");
+      // A queued page above the reading line may change height after decoding.
+      preserveAnchor(anchor, before);
+      scheduleTracking();
     } catch (error) {
-      if (url) { URL.revokeObjectURL(url); urls.delete(url); }
+      if (url) active.revokeURL(view.chapter, url);
       if (!current()) return;
       console.warn("Unable to load comic page", error);
-      slot.image?.remove();
-      slot.image = null;
+      slot.image?.remove(); slot.image = null;
       slot.state = "error";
       slot.message.textContent = error instanceof ArchiveError ? error.message : `Page ${slot.number} could not be loaded.`;
       slot.retry.hidden = false;
+      status.textContent = `${view.chapter.chapter.displayName}: page ${slot.number} could not be loaded. Retry is available.`;
+      // The connection controller checks actual root permission before disconnecting anything.
+      permissionLost(error);
     } finally { if (current()) slot.container.setAttribute("aria-busy", "false"); }
   }
 
-  function renderPages(active: OpenedChapter, operation: number, name: string): void {
-    let pumping = false;
-    const pump = async (): Promise<void> => {
-      if (pumping) return;
-      pumping = true;
-      // One extraction at a time keeps decompression memory predictable.
-      while (queue.length && generation === operation) await loadSlot(queue.shift()!, active, operation);
-      pumping = false;
-    };
-    const enqueue = (slot: PageSlot): void => {
-      if (generation !== operation || !["idle", "error"].includes(slot.state)) return;
-      slot.state = "queued";
-      queue.push(slot);
-      void pump();
-    };
-    slots = active.pages.map((page, index) => {
+  function chapterChanged(active: ReadingSession, chapter: SessionChapter, error?: unknown): void {
+    if (session !== active) return;
+    const view = sections.get(chapter.index)!;
+    const previous = sections.get(chapter.index - 1);
+    if (previous) updateBoundary(active, previous);
+    if (chapter.state === "opening") { view.content.textContent = "Opening chapter…"; return; }
+    if (chapter.state === "failed") {
+      console.warn("Unable to open chapter", error);
+      const message = document.createElement("p");
+      message.textContent = `${chapter.chapter.displayName}: ${chapterError(error)}`;
+      view.content.replaceChildren(message,
+        button("Retry chapter", () => { if (session === active) void active.retry(chapter); }),
+        button("Back to series", goBack));
+      view.boundary.replaceChildren();
+      status.textContent = message.textContent;
+      if (error instanceof DOMException && ["NotAllowedError", "SecurityError"].includes(error.name)) permissionLost(error);
+      return;
+    }
+    const archive = chapter.archive!;
+    view.slots = archive.pages.map((page, index) => {
       const container = document.createElement("div");
       container.className = "real-comic-page";
+      container.dataset.pageNumber = String(index + 1);
       const message = document.createElement("p");
       message.textContent = `Page ${index + 1}`;
-      message.setAttribute("role", "status");
-      const retry = document.createElement("button");
-      retry.type = "button";
-      retry.className = "button button-secondary";
-      retry.textContent = `Retry page ${index + 1}`;
+      const retry = button(`Retry page ${index + 1}`, () => enqueue(active, view, slot));
       retry.hidden = true;
       const slot: PageSlot = { page, number: index + 1, container, message, retry, image: null, state: "idle" };
-      retry.addEventListener("click", () => enqueue(slot));
       container.append(message, retry);
+      pageTargets.set(container, { section: view, slot });
       return slot;
     });
-    const end = document.createElement("div");
-    end.className = "chapter-divider";
-    const endTitle = document.createElement("strong");
-    endTitle.textContent = `End of ${name}`;
-    const back = document.createElement("button");
-    back.type = "button";
-    back.className = "button button-secondary";
-    back.textContent = "Back to series";
-    back.addEventListener("click", goBack);
-    end.append(endTitle, back);
-    pagesElement.replaceChildren(...slots.map(slot => slot.container), end);
-    if (typeof IntersectionObserver === "function") {
-      const byElement = new Map(slots.map(slot => [slot.container, slot]));
-      observer = new IntersectionObserver(entries => {
-        for (const entry of entries) {
-          if (!entry.isIntersecting || generation !== operation) continue;
-          const slot = byElement.get(entry.target as HTMLElement);
-          if (slot) { observer?.unobserve(slot.container); enqueue(slot); }
-        }
-      }, { rootMargin: `${Math.max(window.innerHeight, 600)}px 0px` });
-      slots.forEach(slot => observer!.observe(slot.container));
-    } else {
-      // A browser without the observer can still load individual pages explicitly.
-      slots.forEach(slot => { slot.retry.textContent = `Load page ${slot.number}`; slot.retry.hidden = false; });
+    view.content.replaceChildren(...view.slots.map(slot => slot.container));
+    if (!view.slots.length) view.content.textContent = "This chapter contains no supported image pages.";
+    if (pageObserver) view.slots.forEach(slot => pageObserver!.observe(slot.container));
+    else view.slots.forEach(slot => { slot.retry.textContent = `Load page ${slot.number}`; slot.retry.hidden = false; });
+    endTargets.set(view.end, view);
+    endObserver?.observe(view.end);
+    updateBoundary(active, view);
+    if (chapter.index === active.currentIndex) status.textContent = `${chapter.chapter.displayName} · ${archive.pages.length} pages. Scroll to read.`;
+    scheduleTracking();
+  }
+
+  function scheduleTracking(): void {
+    if (!session || frame) return;
+    frame = requestAnimationFrame(() => { frame = 0; trackVisible(); });
+  }
+
+  function trackVisible(): void {
+    const active = session;
+    if (!active) return;
+    const line = readingLine();
+    const distance = (element: HTMLElement): number => {
+      const rect = element.getBoundingClientRect();
+      return line < rect.top ? rect.top - line : line > rect.bottom ? line - rect.bottom : 0;
+    };
+    const ready = [...sections.values()].filter(view => active.isActive(view.chapter) && view.chapter.archive);
+    let candidate = ready.reduce<ChapterSection | null>((best, view) => !best || distance(view.section) < distance(best.section) ? view : best, null);
+    const currentView = sections.get(active.currentIndex);
+    if (candidate && currentView && candidate.chapter.index !== active.currentIndex) {
+      const forward = candidate.chapter.index > active.currentIndex;
+      // An 80px dead band prevents labels/resources thrashing at a boundary.
+      if (forward ? line < candidate.section.getBoundingClientRect().top + 80 : line > currentView.section.getBoundingClientRect().top - 80) candidate = currentView;
+    }
+    if (candidate) active.setCurrent(candidate.chapter.index);
+    const visible = sections.get(active.currentIndex);
+    if (!visible?.chapter.archive) return;
+    const page = visible.slots.reduce<PageSlot | null>((best, slot) => !best || distance(slot.container) < distance(best.container) ? slot : best, null);
+    const label = `${active.currentChapter.displayName} · ${page ? `Page ${page.number} of ${visible.slots.length}` : "No image pages"}`;
+    if (chapterName.textContent !== label) chapterName.textContent = label;
+    const endRect = visible.end.getBoundingClientRect();
+    if (automatic.checked && endRect.top <= window.innerHeight * 2 && endRect.bottom >= 0) void active.prepareNext(active.currentIndex);
+    if (active.currentIndex === active.series.chapters.length - 1 && endRect.top < window.innerHeight && !endedSeries) {
+      endedSeries = true;
+      status.textContent = `End of ${active.currentChapter.displayName}. End of series.`;
     }
   }
 
@@ -178,9 +338,8 @@ export function initializeReaderView(
     if (destroyed) return;
     void clear();
     const operation = generation;
-    const abort = new AbortController();
-    controller = abort;
-    selection = { series, chapter };
+    openingSelection = true;
+    startingSelection = { series, chapter };
     title.textContent = series.name;
     chapterName.textContent = chapter.displayName;
     backButton.textContent = "← Back to series";
@@ -189,22 +348,40 @@ export function initializeReaderView(
     backButton.focus();
     transition = transition.then(async () => {
       if (generation !== operation) return;
-      try {
-        const opened = await openChapter(chapter.fileHandle, abort.signal);
-        if (generation !== operation) { await opened.close(); return; }
-        archive = opened;
-        if (!opened.pages.length) { status.textContent = "This chapter contains no supported image pages."; return; }
-        status.textContent = `${opened.pages.length} pages · Scroll to read.`;
-        renderPages(opened, operation, chapter.displayName);
-      } catch (error) {
-        if (generation !== operation || abort.signal.aborted) return;
-        console.warn("Unable to open chapter", error);
-        status.textContent = error instanceof ArchiveError ? error.message
-          : error instanceof DOMException && error.name === "NotFoundError" ? "This chapter file is no longer available. Return to the series and choose another chapter."
-            : error instanceof DOMException && ["NotAllowedError", "SecurityError"].includes(error.name) ? "This file cannot be read. Check permission or return to the series and choose another chapter."
-              : "This chapter could not be opened. It may be damaged, encrypted, or use an unsupported ZIP format.";
-        if (error instanceof DOMException && ["NotAllowedError", "SecurityError"].includes(error.name)) permissionLost(error);
+      const active = new ReadingSession(series, chapter, {
+        mounted: mounted => { if (session === active) mount(active, mounted); },
+        changed: (mounted, error) => chapterChanged(active, mounted, error),
+        removed: removeSection,
+        currentChanged: mounted => {
+          if (session === active) status.textContent = `Now reading ${mounted.chapter.displayName}.`;
+        },
+      });
+      session = active;
+      openingSelection = false;
+      if (typeof IntersectionObserver === "function") {
+        const margin = `${Math.max(window.innerHeight, 600)}px 0px`;
+        pageObserver = new IntersectionObserver(entries => {
+          if (session !== active) return;
+          for (const entry of entries) {
+            const target = pageTargets.get(entry.target);
+            if (entry.isIntersecting && target) { pageObserver?.unobserve(entry.target); enqueue(active, target.section, target.slot); }
+          }
+        }, { rootMargin: margin });
+        endObserver = new IntersectionObserver(entries => {
+          if (session !== active || !automatic.checked) return;
+          for (const entry of entries) {
+            const view = endTargets.get(entry.target);
+            if (entry.isIntersecting && view) void active.prepareNext(view.chapter.index);
+          }
+        }, { rootMargin: margin });
       }
+      if (typeof ResizeObserver === "function") resizeObserver = new ResizeObserver(scheduleTracking);
+      await active.start();
+    }).catch(error => {
+      if (generation !== operation) return;
+      console.warn("Unable to start reading session", error);
+      openingSelection = false;
+      status.textContent = "This reading session could not be started. Return to the library and try again.";
     });
   }
 
@@ -217,9 +394,7 @@ export function initializeReaderView(
     status.textContent = "Preview reader. Choose a real chapter from a connected library.";
     backButton.focus();
     for (const number of [1, 2]) {
-      const page = document.createElement("div");
-      page.className = "comic-page";
-      page.textContent = `Preview page ${number}`;
+      const page = document.createElement("div"); page.className = "comic-page"; page.textContent = `Preview page ${number}`;
       pagesElement.append(page);
     }
   }
@@ -227,14 +402,22 @@ export function initializeReaderView(
   const onZoom = (): void => setZoom(Number(zoom.value));
   const fitWidth = (): void => setZoom(100);
   const libraryAction = (): void => { void clear(); backToLibrary(); };
+  const continuationChanged = (event: Event): void => {
+    const enabled = (event.currentTarget as HTMLInputElement).checked;
+    automatic.checked = readerAutomatic.checked = enabled;
+    if (!session) return;
+    for (const view of sections.values()) updateBoundary(session, view);
+    scheduleTracking();
+  };
   zoom.addEventListener("input", onZoom);
   document.querySelector("#fit-width-button")!.addEventListener("click", fitWidth);
   backButton.addEventListener("click", goBack);
   document.querySelector("#reader-library-button")!.addEventListener("click", libraryAction);
-  const onPageHide = (event: PageTransitionEvent): void => {
-    if (event.persisted) void clear();
-    else destroy();
-  };
+  automatic.addEventListener("change", continuationChanged);
+  readerAutomatic.addEventListener("change", continuationChanged);
+  window.addEventListener("scroll", scheduleTracking, { passive: true });
+  window.addEventListener("resize", scheduleTracking);
+  const onPageHide = (event: PageTransitionEvent): void => { if (event.persisted) void clear(); else destroy(); };
   const destroy = (): void => {
     destroyed = true;
     void clear();
@@ -242,9 +425,13 @@ export function initializeReaderView(
     document.querySelector("#fit-width-button")!.removeEventListener("click", fitWidth);
     backButton.removeEventListener("click", goBack);
     document.querySelector("#reader-library-button")!.removeEventListener("click", libraryAction);
+    automatic.removeEventListener("change", continuationChanged);
+    readerAutomatic.removeEventListener("change", continuationChanged);
+    window.removeEventListener("scroll", scheduleTracking);
+    window.removeEventListener("resize", scheduleTracking);
     window.removeEventListener("pagehide", onPageHide);
   };
   window.addEventListener("pagehide", onPageHide);
   setZoom(100);
-  return { open, preview, close: clear, destroy, isOpen: () => selection !== null };
+  return { open, preview, close: clear, destroy, isOpen: () => session !== null || openingSelection };
 }
