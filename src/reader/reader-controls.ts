@@ -42,6 +42,7 @@ export function initializeReaderControls(actions: ControlActions) {
   }
   function syncFullscreen(): void {
     const active = document.fullscreenElement === document.documentElement;
+    document.documentElement.classList.toggle("reader-fullscreen", active && !reader.hidden && !leaving && !destroyed);
     fullscreen.hidden = !document.fullscreenEnabled || typeof document.documentElement.requestFullscreen !== "function";
     fullscreen.disabled = fullscreenPending;
     fullscreen.textContent = active ? "Exit fullscreen" : "Fullscreen";
@@ -54,7 +55,8 @@ export function initializeReaderControls(actions: ControlActions) {
     try {
       if (document.fullscreenElement) await document.exitFullscreen();
       else {
-        // Fullscreen the document so window scrolling and anchor measurements stay intact.
+        // Keep window-based reading anchors and the external shortcut dialog intact.
+        // The synchronized class restricts the fullscreen layout to reader content.
         ownsFullscreen = true;
         await document.documentElement.requestFullscreen();
         if (reader.hidden || !ownsFullscreen) await document.exitFullscreen();
@@ -158,6 +160,7 @@ export function initializeReaderControls(actions: ControlActions) {
     },
     leave(): void {
       leaving = true;
+      document.documentElement.classList.remove("reader-fullscreen");
       mobile.setActive(false);
       if (ownsFullscreen) {
         ownsFullscreen = false;

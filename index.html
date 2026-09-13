@@ -4,8 +4,16 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
     <meta name="description" content="A private, offline reader for local CBZ libraries.">
-    <meta name="theme-color" content="#101214">
+    <meta name="theme-color" content="#000">
+    <meta name="background-color" content="#000">
+    <meta name="application-name" content="Comic Reader">
+    <meta name="color-scheme" content="dark">
+    <meta name="apple-mobile-web-app-title" content="Comic Reader">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
     <link rel="icon" type="image/svg+xml" href="./favicon.svg">
+    <link rel="icon" type="image/png" sizes="192x192" href="./icon-192.png">
+    <link rel="apple-touch-icon" sizes="192x192" href="./icon-192.png">
     <title>Comic Reader</title>
   </head>
   <body>
@@ -19,7 +27,7 @@
         <div class="topbar-actions">
           <span class="offline-status"><span aria-hidden="true"></span> On-device reading</span>
           <span class="connection-status" data-folder-status>Restoring saved folder…</span>
-          <button class="button button-secondary" type="button" id="folder-button" data-folder-choose disabled>Choose library folder</button>
+          <button class="button button-secondary" type="button" id="folder-button" data-folder-choose disabled>Choose folder</button>
           <button class="button button-secondary" type="button" id="rescan-button" data-library-rescan disabled>Rescan</button>
         </div>
       </header>
@@ -50,6 +58,19 @@
               </div>
             </div>
 
+            <section id="library-first-run" class="connection-panel" aria-labelledby="first-run-title" hidden>
+              <h2 id="first-run-title">Start with your comic folder</h2>
+              <p>Your comics stay on your device. Choose the parent folder containing one folder per series, with its CBZ chapters inside. Comic Reader requests read-only access.</p>
+              <p>Persistent folder access requires Chrome or Edge on desktop, on HTTPS or localhost.</p>
+              <pre aria-label="Example comic folder structure">Comics/
+├─ Series One/
+│  ├─ Chapter 1.cbz
+│  └─ Chapter 2.cbz
+└─ Series Two/
+   └─ Volume 1.cbz</pre>
+              <button class="button button-primary" type="button" data-folder-choose disabled>Choose folder</button>
+            </section>
+
             <section class="connection-panel" aria-label="Library connection">
               <div role="status" aria-live="polite">
                 <strong data-folder-name>Local library</strong>
@@ -57,7 +78,7 @@
                 <p data-folder-description>Checking the saved folder without requesting permission.</p>
               </div>
               <div class="connection-actions">
-                <button class="button button-primary" type="button" data-folder-choose disabled>Choose library folder</button>
+                <button class="button button-primary" type="button" data-folder-choose disabled>Choose folder</button>
                 <button class="button button-secondary" type="button" data-folder-reconnect hidden>Reconnect folder</button>
                 <button class="button button-secondary" type="button" data-library-rescan disabled>Rescan</button>
               </div>
@@ -111,7 +132,7 @@
             <ul id="bookmark-list" class="bookmark-list"></ul>
           </section>
           <section class="view reader-view" data-view="reader" hidden>
-            <button id="show-reader-controls" class="button button-secondary reader-show-controls" type="button" aria-controls="reader-toolbar" aria-expanded="false" hidden>Show controls</button>
+            <button id="show-reader-controls" class="button button-secondary reader-show-controls" type="button" aria-label="Show controls" aria-controls="reader-toolbar" aria-expanded="false" hidden><span class="show-controls-label">Show controls</span><svg class="show-controls-icon" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true" focusable="false"><path d="M3 6h18M3 12h18M3 18h18"/><circle cx="8" cy="6" r="2"/><circle cx="16" cy="12" r="2"/><circle cx="10" cy="18" r="2"/></svg></button>
             <div class="reader-toolbar" id="reader-toolbar">
               <div class="reader-title">
                 <button class="text-button" type="button" id="reader-back-button">← Library</button>
@@ -160,6 +181,14 @@
             </div>
 
             <div class="settings-grid">
+              <section class="settings-panel app-settings-panel" aria-labelledby="app-settings-title">
+                <h2 id="app-settings-title" tabindex="-1">Comic Reader</h2>
+                <p>Version 1.0.0 · Your comics and reading data stay on this device.</p>
+                <div class="connection-actions">
+                  <button id="install-app" class="button button-secondary" type="button" hidden>Install Comic Reader</button>
+                  <button id="update-app" class="button button-secondary" type="button" hidden>Update now</button>
+                </div>
+              </section>
               <section class="settings-panel">
                 <h2>Reader</h2>
 
@@ -186,7 +215,7 @@
                   <p data-folder-description>Checking the saved folder without requesting permission.</p>
                   <p data-library-summary>No library connected</p>
                   <div class="connection-actions">
-                    <button class="button button-secondary full-width" type="button" id="settings-folder-button" data-folder-choose disabled>Choose library folder</button>
+                    <button class="button button-secondary full-width" type="button" id="settings-folder-button" data-folder-choose disabled>Choose folder</button>
                     <button class="button button-secondary full-width" type="button" data-folder-reconnect hidden>Reconnect folder</button>
                     <button class="button button-secondary full-width" type="button" id="disconnect-folder-button" hidden>Disconnect folder</button>
                   </div>
@@ -246,6 +275,13 @@
       <label id="library-mismatch-label" class="setting-row" hidden><input id="confirm-library-mismatch" type="checkbox"><span>I confirm importing data from a different library name. Matching still requires exact series and chapter identifiers; renamed chapters are not guessed.</span></label>
       <div class="connection-actions"><button id="cancel-import-reading" class="button button-secondary" type="button" autofocus>Cancel</button><button id="confirm-import-reading" class="button button-primary" type="button" disabled>Replace reading data</button></div>
     </dialog>
+    <section id="pwa-update-notice" class="pwa-update-notice" aria-label="Application update" hidden>
+      <p id="pwa-update-message" role="status" aria-live="polite" aria-atomic="true"></p>
+      <div class="connection-actions">
+        <button id="pwa-update-now" class="button button-primary" type="button">Update now</button>
+        <button id="pwa-update-later" class="button button-secondary" type="button">Later</button>
+      </div>
+    </section>
     <div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
     <script type="module" src="/src/main.ts"></script>
   </body>

@@ -89,6 +89,13 @@ export class ReadingData {
     const value = { ...this.preferences };
     this.queue(() => operate("readwrite", s => s.put(value, "reader"), "preferences").then(() => {}));
   }
+  async flush(): Promise<void> {
+    this.flushPreferences();
+    await this.writes;
+    // A pending metadata mutation may have delayed a dirty preference save.
+    this.flushPreferences();
+    await this.writes;
+  }
   private queue(action: () => Promise<void>): void {
     const epoch = this.epoch;
     this.writes = this.writes.then(async () => { if (epoch === this.epoch) await action(); }).catch(error => this.failure(error));

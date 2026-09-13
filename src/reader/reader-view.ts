@@ -470,7 +470,7 @@ export function initializeReaderView(
   function finishRestore(slot: PageSlot, failed: boolean): void {
     if (session) chapterName.textContent = `${session.currentChapter.displayName} \u00b7 Page ${slot.number} of ${sections.get(session.currentIndex)!.slots.length}`;
 
-    status.textContent = failed ? "Saved page could not be loaded. Position restored to its placeholder; Retry is available." : `Reading position restored: page ${slot.number}.`;
+    status.textContent = failed ? "Saved page could not be loaded. Its reading position is restored; Retry is available." : `Reading position restored: page ${slot.number}.`;
     positionRestore(slot); restoring = false; restore = undefined;
     scheduleTracking();
   }

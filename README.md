@@ -1,104 +1,102 @@
 # Comic Reader
 
-Comic Reader is an installable, local-first PWA for reading CBZ libraries in vertical continuous scroll. Milestone 9 is complete. Milestone 10 is the final v1.0 release pass.
+Comic Reader **v1.0.0** is the first stable release: a local-first, installable PWA for reading CBZ comic libraries in vertical continuous scroll. Comics remain on your device and are never uploaded or modified.
 
-## Browser support and privacy
+## Features
 
-Local libraries require HTTPS or localhost and a browser providing the File System Access directory picker and persistent directory handles, such as compatible desktop Chrome or Edge. Many phone browsers do not provide this API: the phone reader layout does not bypass that limitation. Unsupported browsers show concise compatibility guidance.
+- Read-only folder connection, natural sorting, search, series details, and lazy local covers.
+- Continuous chapter reading with optional automatic continuation, Previous/Next, and chapter selection.
+- Saved reading positions, Continue Reading, page bookmarks, and manual read states.
+- Desktop zoom, phone fit-to-width, page spacing, OLED-black/dark/light backgrounds, fullscreen, and keyboard shortcuts.
+- Accessible desktop Hide/Show controls and a phone overlay with tap/up-scroll reveal, down-scroll/idle hiding, safe areas, and a permanent Show controls recovery action.
+- Local JSON backup/import, separate reading-data and cover-cache clearing, optional installation, and user-controlled app updates.
 
-All folder access is read-only. Comic files remain on the device and are never modified or uploaded. Extraction, decoding, resizing, progress, bookmarks, and cover caching happen locally. No accounts, analytics, external images, or metadata services are used. The service worker caches only the application's static assets, never comic files, page images, reading data, or generated covers.
+## Browsers and library setup
 
-Browser storage and permission can be cleared or revoked. The app checks saved read permission without prompting; use **Reconnect folder** to renew it. Permission is also checked when returning to the app and when file access fails. If storage is unavailable, reading, preferences, progress tracking, and bounded cover caching still work for the session, but bookmarks, manual state changes, and backups require working persistent storage.
+Use **Chrome or Edge on desktop**, on HTTPS or localhost, for persistent folder access. The browser must provide the File System Access directory picker and directory handles. Many phone browsers do not support this API; the responsive phone reader does not bypass that limitation. Unsupported browsers show compatibility guidance.
 
-## Connect a library
-
-Choose a root folder arranged like this:
+Choose the parent folder containing one folder per series, with CBZ chapters directly inside each series folder:
 
 ```text
-Comic Library/
-  Series Name/
+Comics/
+  Series One/
     Chapter 1.cbz
     Chapter 2.cbz
-    Chapter 10.cbz
+  Series Two/
+    Volume 1.cbz
 ```
 
-Only immediate series subfolders with direct CBZ files are scanned. Extensions are case-insensitive; titles and chapter names use natural sorting. Root-level comics and deeper folders are ignored. Scanning enumerates handles without reading archive bytes. Use search, Title/Chapter count sorting, and **Rescan** to update the library after file changes. Partial scans identify unreadable folders and retain their cover cache; failed scans can be retried.
+Click **Choose folder** to grant read-only access. Saved permission is queried without prompting; click **Reconnect folder** when permission needs renewal. **Change folder** selects a different root. **Rescan** refreshes the library after changes; root-level comics and deeper nested series folders are ignored. Partial scans report unreadable folders and can be retried.
 
-**Change folder** connects another root. **Disconnect folder** removes the saved connection separately from reading data. If storage fails during disconnect, the active session still disconnects, with an explanation that the earlier saved folder may restore next time. Changing/disconnecting folders cancels reading, scanning, and cover work.
+Open a series and chapter to read, or use Continue Reading or a saved bookmark. Previous/Next and chapter selection start at the chapter's top. Automatic continuation prepares the next chapter near the current boundary; failed continuation leaves the current chapter readable with Retry and Back actions.
 
-## Read chapters
+Desktop zoom is saved from 60 to 140%; Fit width resets the default 720px reading width. Phone pages fit the available width without changing desktop zoom. Tap the reading area or scroll upward about 24px to reveal phone controls. Downward scrolling and roughly three idle seconds hide them when controls/dialogs are not being used. Reader settings expands spacing, background, continuation, fullscreen, and help. Keyboard shortcuts outside fields/editable content/dialogs: **F** fullscreen, **W** Fit width, **B** bookmark, **H** controls, **[**/**]** chapters, **?** help. Normal scrolling keys remain unchanged.
 
-Open a series, then a chapter. Supported raster pages are JPG/JPEG, PNG, WebP, GIF, and AVIF where the browser can decode them. Nested image paths are naturally sorted. SVG, unsafe/traversal paths, symbolic links, macOS metadata, and named thumbnails are ignored. CBZ files must be unencrypted ZIP archives using stored or deflate compression with a compatible browser decoder.
+## Installation, offline use, and updates
 
-Archive limits remain **5,000 entries**, **2,000 pages**, and **100 MiB uncompressed per image**, with declared and streamed size checks, CRC checks, and overlapping-entry checks. Pages extract sequentially near the viewport. Empty/corrupt/missing chapters and failed pages offer clear Retry and Back to series actions.
+Settings shows **Install Comic Reader** only when the browser supplies an installation prompt. Installation is optional; cancellation is quiet and does not produce repeated prompts in that tab. The action disappears after installation or in standalone mode. The app works in a normal browser tab too. Installed windows use standalone display and prefer portrait orientation.
 
-Automatic continuation prepares the next chapter near the current boundary. Disabling it leaves an explicit **Continue to next chapter** action. A failed next chapter leaves the current chapter readable and does not retry continuously. The toolbar and chapter selector follow the active chapter using the existing stable page tracking without moving keyboard focus while scrolling.
+After its assets are cached, the app shell can open offline. Comics still require the local folder to be available and read permission to be granted. Installation/offline setup failures leave normal browser reading available.
 
-The resource window retains at most the previous, current, and next chapter. Evicted chapters and closed sessions release their archives, extraction queues, abort listeners, images, and object URLs. Generation guards prevent old results from changing a newer session. Layout changes above the reading area preserve its anchor.
+When a new app version is waiting, an accessible notice offers **Update now** and **Later**. Later dismisses the notice for the tab; Settings retains Update now while an update is available. Nothing forces a reload during reading. Update now activates the waiting worker and reloads only when it is ready, after capturing the reading position, closing reader resources, and flushing pending metadata writes. An update activated in another tab still requires this tab's consent to reload. Failed or timed-out activation leaves reading available and offers retry. Outdated app-shell caches are cleaned up during activation.
 
-**Previous chapter**, **Next chapter**, and the chapter selector open a fresh session at that chapter's top; Previous/Next are disabled at series boundaries. **Back to series** returns to the current chapter. **Fullscreen** is available where supported, never starts automatically, follows browser exits, and handles rejected requests without interrupting reading.
+## Privacy and local storage
 
-## Desktop and phone controls
+Folder access, archive extraction, image decoding, thumbnail resizing, and all reading data stay on the device. There are no analytics, tracking, ads, remote fonts, or external comic/metadata requests. The static application and bundled assets are the only service-worker cache contents. Comic bytes, image/object URLs, handles, generated cover Blobs, and reading data never enter that cache.
 
-Desktop controls retain explicit **Hide controls** and **Show controls** actions. Zoom adjusts the default 720px reading width from 60 to 140%; **Fit width** resets the saved desktop zoom to 100%.
+Native IndexedDB database `comic-reader` remains at **version 4**, preserving all existing migrations and stores: folder handles, progress, preferences, bookmarks, manual read states, and disposable cover thumbnails. If storage fails, reading, preferences, progress tracking, and a bounded cover cache work for the session; bookmarks, manual states, and backups require persistent storage. Browser-cleared storage may remove all saved local data. Final asynchronous saves can be interrupted by browser shutdown.
 
-At widths up to 700px, controls form a fixed bottom overlay that consumes no document layout space. Tap the reading area or scroll upward deliberately by about 24px to show them. Scrolling downward hides them; approximately three idle seconds also hides them when no control or dialog is in use. Dragging, scrolling, long presses, and text selection do not count as taps. A small **Show controls** button always provides a recovery action. Scroll handling is passive and runs through requestAnimationFrame.
+**Disconnect folder** retains reading data and comics. If storage fails while disconnecting, the session still disconnects with a warning that the saved folder may restore next time. **Clear reading data** confirms before removing this device's progress, bookmarks, states, and preferences, retaining the connection and covers. **Clear cached covers** clears only the active library's disposable covers and regenerates nearby thumbnails lazily.
 
-The phone overlay includes active-page bookmarking, Previous/Next, chapter selection, **Reader settings**, and Back to series. Reader settings expands spacing, background, continuation, fullscreen, and shortcut help. Its height is bounded and its contents scroll on short screens. It respects safe-area insets and keeps touch targets at least 44px. Phone pages always fit the available width; zoom controls are hidden and this layout does not overwrite saved desktop zoom.
+Covers use the first naturally sorted supported raster image in the first naturally sorted chapter. Invalid sources keep initials and Retry cover without searching later chapters. Thumbnails preserve proportions within **480 x 640px**, without upscaling or stored cropping, preferring WebP quality 0.82 with JPEG/PNG fallback and a **1 MiB** limit. Generation has one job at a time, a **600px** preload margin, and a **24-thumbnail** session cache. Chapter ID/filename, file size, and modification time validate reuse; complete scans prune missing-series covers, while partial/failed scans retain them.
 
-Reader background choices include **Black**, **OLED black**, **Dark**, and **Light**. OLED black uses true **#000**, including unloaded page surfaces, with readable controls, boundaries, errors, and focus indicators. Background, spacing, continuation, and desktop zoom use existing preference storage and backup validation. Clear reading data resets all preferences to their existing defaults.
+## Backup and import
 
-Shortcuts outside inputs, selectors, editable content, and open dialogs:
+1. Connect the library and open Settings.
+2. Choose **Export reading data** to download local JSON containing that library's progress, bookmarks, read states, and global reader preferences.
+3. To restore, choose **Import reading data**, select one backup, review its library name and record counts, and confirm replacement. A different library name requires additional confirmation.
 
-| Key | Action |
-| --- | --- |
-| F | Toggle fullscreen |
-| W | Fit width |
-| B | Toggle active-page bookmark |
-| H | Hide/show controls |
-| [ / ] | Previous/next chapter |
-| ? | Shortcut-help dialog |
+Import replaces the active library's saved metadata transactionally, preserving other library-name namespaces and the folder connection. Invalid or failed imports retain saved data. Schema version 1 accepts at most **5 MiB** and **10,000 total records**. Backups exclude comic files, handles, images, covers, and URLs. Renamed series/chapters are never guessed.
 
-Space, Page Up, Page Down, and arrow keys retain normal scrolling. Dialogs support Escape and focus restoration. Chapter changes and blocking errors use polite announcements; page tracking does not announce every page. Visible focus and reduced-motion support remain available.
+## Known limitations
 
-## Reading data and backups
+- One connected folder at a time; root-level CBZ files and deeper series folders are not scanned.
+- Only unencrypted CBZ ZIP archives using stored/deflate compression; raster pages are JPG/JPEG, PNG, WebP, GIF, and AVIF where browser decoding is available. SVG, unsafe paths, symlinks, macOS metadata, and named thumbnails are ignored.
+- Archive limits: **5,000 entries**, **2,000 pages**, and **100 MiB uncompressed per page**, with bounded extraction, CRC, and overlap checks. Cover decoding additionally limits sources to **16,384px per dimension** and **40 million pixels**.
+- The reader retains the previous/current/next chapter window. Older evicted chapters are reopened using chapter navigation rather than scrolling indefinitely backward.
+- File changes require Rescan. Cover changes preserving the whole fingerprint are not detected.
+- Root folder names define storage namespaces; two roots with identical names share a namespace. Renaming folders/files can leave unavailable progress or bookmarks.
+- Persistent folder access, fullscreen, installation, and raster formats depend on browser capabilities and permission. Phone layout support does not imply phone directory-picker support.
 
-Continue Reading opens the latest saved position whose exact series/chapter identifiers exist in the current scan. Positions contain a page index and relative offset, with target-first image decoding and restoration. Scroll saves debounce for 700ms; chapter changes, leaving, visibility loss, and pagehide flush the latest anchor. Browser shutdown may interrupt an asynchronous final save.
+## Local development
 
-Bookmarks use the active page's stable anchor. Bookmark lists restore positions and label missing chapters unavailable. Manual chapter/series read states are separate from progress; marking unread removes progress and overrides while retaining bookmarks. Completion counts only currently scanned chapters.
+Use Node.js **22.12 or newer** (the deployment workflow uses Node.js 24) and npm.
 
-Settings **Export reading data** downloads local JSON schema version 1 containing only the active library's progress, bookmarks, manual read states, and global preferences. Covers, handles, files, and URLs are excluded. **Import reading data** validates one JSON file up to **5 MiB** and **10,000 total records**, then confirms replacement. Different library names require explicit confirmation; accepted imports remap the namespace but never guess renamed chapters. Replacement is transactional and cancels pending reader saves. Invalid or failed imports retain existing saved data.
+```powershell
+npm.cmd ci
+npm.cmd run dev
+npm.cmd run build
+npm.cmd run preview
+```
 
-**Clear reading data** confirms before clearing progress, bookmarks, read overrides, and preferences for this device. It retains the folder connection, cover cache, and comic files.
+Open the local URL printed by Vite, including `/comic-reader/`. The production build is written to `dist/`. There is no backend or server-side router.
 
-Native IndexedDB database `comic-reader` remains at **version 4**. Existing migrations are preserved: version 1 saves folder handles; version 2 adds progress/preferences; version 3 adds bookmarks/readStatuses; version 4 adds covers. Milestone 9 requires no database upgrade. Ordered writes and generation guards prevent stale saves from repopulating cleared data.
+## GitHub Pages deployment
 
-Library namespaces use the root folder's name. Two roots with exactly the same name share a namespace; renaming folders or chapters can leave stale records. Exact identifiers are required for restoration.
+The Vite base, manifest ID/start URL/scope, icons, and service-worker scope use **/comic-reader/**. The site is served at `https://YOUR-USERNAME.github.io/comic-reader/`. Direct loading/reloading of the root or `index.html` uses static files, with the service-worker navigation fallback limited to those app-shell paths. Only generated `dist/` assets are uploaded; source, documentation, development configuration, and local comic data are not deployed.
 
-## Local series covers
+In the GitHub repository, set **Settings > Pages > Build and deployment > Source** to **GitHub Actions**. Under **Settings > Actions > General**, enable Actions and allow the official actions used by the workflow; check that any **github-pages** environment protection rules permit the intended deployment. Organization policy must allow the workflow's `contents: read`, `pages: write`, and `id-token: write` permissions. Use the repository name `comic-reader` and leave Pages custom-domain settings unset unless deliberately reconfiguring the base path.
 
-Covers use the first naturally sorted supported raster image in the first naturally sorted chapter. Invalid first chapters retain deterministic initials and **Retry cover**, without searching later chapters. Only that page is extracted using the reader's archive safety rules.
+The existing `.github/workflows/deploy.yml` checks out the project, installs the lockfile with `npm ci`, builds with Node.js 24, uploads `dist/` as the Pages artifact, and deploys through the `github-pages` environment. Once manually verified, the user can commit/push to `main` or run the workflow manually. Release preparation itself does not publish a site, GitHub release, or tag.
 
-Thumbnails preserve proportions inside **480 x 640px**, without upscaling or stored cropping. Decoded sources are limited to **16,384px per dimension** and **40 million pixels**. Canvas output prefers WebP at quality 0.82, with JPEG/PNG fallback and a **1 MiB** output limit. Card presentation uses a fixed 3:4 slot and object-fit: cover.
+## Final manual release checklist
 
-IntersectionObserver uses a **600px** preload margin and one deduplicated cover job at a time, prioritizing visible cards. The fallback viewport check is throttled. Only current search results request covers; a **24-thumbnail LRU** bounds session memory. Source validation uses chapter ID, filename, file size, and modification time; unchanged fingerprints reuse cached thumbnails without reopening the ZIP. Changes preserving every fingerprint field are not detected.
+- Start without a saved connection; verify folder guidance, Choose folder, empty folders, unsupported-browser messaging, denied/revoked permission, and reconnect/change/disconnect recovery.
+- Scan/search/sort a real library, check cached covers and Retry/clear, read across chapter boundaries, restore progress/bookmarks, and mark chapters/series read or unread.
+- Switch chapters and folders rapidly during extraction; try corrupt/empty/missing files and failed pages/continuation, and verify no stale images or unreleased resources.
+- Check desktop controls/zoom, phone tap/up/down/idle overlay behavior, active-page bookmarks, phone fit-to-width, OLED black, safe areas, keyboard shortcuts, focus, and reduced motion.
+- Export/import a backup, cancel or reject an invalid import, and verify clear actions affect only their documented data.
+- Check install availability/cancellation/standalone behavior and offline reopening. Try Update now/Later during reading, activation failure, and an update from another tab; confirm reload occurs only after consent and readiness.
+- On GitHub Pages, directly open/reload `/comic-reader/` and `/comic-reader/index.html`; verify the manifest, icons, bundled JS/CSS, and worker resolve under the repository path, with no comic uploads or comic data in service-worker caches.
 
-Only complete successful scans prune missing-series covers in the active namespace. **Clear cached covers** is separate from reading-data clearing: it cancels work, clears that library's thumbnails, revokes URLs, and regenerates nearby covers lazily. Archives, decoded bitmaps, canvases, and temporary URLs are released. Disposal removes card retry handlers, observers, listeners, and session cache references, including late-result guards.
-
-## Milestone 9 manual checklist
-
-- On a phone layout, tap pages, drag/scroll, scroll up/down, and wait three seconds; check the overlay and Show controls, safe areas, focus, selects, dialogs, and expanded Reader settings.
-- Bookmark the active page with controls shown/hidden around chapter boundaries, then restore that bookmark.
-- Set desktop zoom, resize to phone width, and return to desktop; verify phone fit-to-width and the unchanged saved zoom.
-- Select OLED black, reload, export/import preferences, and clear reading data; check true-black surfaces and readable recovery/focus states.
-- Change/disconnect folders during reading, scans, and cover generation; try unavailable storage during disconnect.
-- Revoke permission, return to the app, and reconnect; check cancellation and the useful compatibility message in unsupported browsers.
-- Switch chapters and navigate rapidly during opening/extraction/continuation; test empty/corrupt/missing chapters, Retry, fullscreen exit, and no stale images or unreleased resources.
-
-No automated tests were added or run for this milestone. Validation uses only `npm.cmd run build` and `git diff --check`; application testing is manual.
-
-## Installation and deployment
-
-Install the PWA using the browser's install action where available. The static app shell is available offline after its assets are cached; comics still require local folder availability and read permission. Browser-cleared storage may remove saved connection, reading data, and covers.
-
-GitHub Pages deployment uses the existing GitHub Actions workflow. The configured base path, manifest start URL, and scope remain **/comic-reader/**. Application icons and the static service-worker infrastructure are retained. Comic files and locally generated Blobs are never added to the service-worker cache.
+Release preparation validation uses `npm.cmd run build` and `git diff --check`, plus inspection of generated artifacts. No automated tests or fixtures were added or run.

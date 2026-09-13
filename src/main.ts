@@ -3,7 +3,7 @@ import { initializeBackupSettings } from "./reader/backup-settings";
 import { ReadingData } from "./storage/reading-data";
 import { initializeReaderSettings } from "./reader/reader-settings";
 import "./styles.css";
-import { registerSW } from "virtual:pwa-register";
+import { initializePwaActions } from "./pwa/pwa-actions";
 import { initializeLibraryConnection } from "./library/connection";
 import { initializeLibraryView } from "./library/library-view";
 import { initializeReaderView } from "./reader/reader-view";
@@ -38,6 +38,11 @@ async function start(): Promise<void> {
     const warning = document.querySelector<HTMLElement>("#storage-warning")!;
     warning.textContent = message; warning.hidden = false;
   });
+  let prepareUpdate: (() => Promise<void>) | undefined;
+  const pwaActions = initializePwaActions(async () => {
+    await prepareUpdate?.();
+    await readingData.flush();
+  }, showToast);
   await readingData.initialize();
   let currentConnection: LibraryConnection | null = null;
   const readerView = initializeReaderView(
@@ -57,6 +62,7 @@ async function start(): Promise<void> {
     () => currentConnection?.handle?.name ?? null,
     showToast,
   );
+  prepareUpdate = async () => { await readerView.close(); };
   const activeLibrary = (): FileSystemDirectoryHandle | null => currentConnection?.state === "connected" ? currentConnection.handle : null;
   const prepareReplacement = async (): Promise<void> => {
     await readerView.closeWithoutSaving(); showView("settings");
@@ -110,14 +116,11 @@ async function start(): Promise<void> {
     if (toast) toast.hidden = true;
     if (!event.persisted) {
       libraryView.destroy();
+      pwaActions.destroy();
       document.removeEventListener("visibilitychange", checkCurrentPermission);
       window.removeEventListener("focus", checkCurrentPermission);
     } else libraryView.setVisible(false);
   });
   window.addEventListener("pageshow", () => libraryView.setVisible(!document.querySelector<HTMLElement>('[data-view="library"]')!.hidden));
-  registerSW({
-    onOfflineReady() { showToast("Comic Reader is ready to use offline."); },
-    onNeedRefresh() { showToast("An update is ready. Reopen the app to apply it."); },
-  });
 }
 void start();

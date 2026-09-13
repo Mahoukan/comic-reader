@@ -25,6 +25,8 @@ export function initializeLibraryConnection(
   const disconnectButton = document.querySelector<HTMLButtonElement>("#disconnect-folder-button")!;
 
   function render(): void {
+    const firstRun = document.querySelector<HTMLElement>("#library-first-run")!;
+    firstRun.hidden = state === "restoring" || (Boolean(handle) && firstRun.dataset.emptyLibrary !== "true");
     const statuses: Record<ConnectionState, string> = {
       unsupported: "Folder access unavailable", disconnected: "No library connected.",
       connected: "Connected", permission: "Reconnect folder", denied: "Permission denied",
@@ -49,7 +51,7 @@ export function initializeLibraryConnection(
       button.disabled = busy || state === "restoring" || state === "unsupported";
       button.textContent = button.id === "folder-button" && state === "connected"
         ? handle!.name : button.id === "folder-button" && reconnect
-          ? "Reconnect folder" : handle ? "Change folder" : "Choose library folder";
+          ? "Reconnect folder" : handle ? "Change folder" : "Choose folder";
     });
     reconnectButtons.forEach(button => {
       button.hidden = !reconnect;

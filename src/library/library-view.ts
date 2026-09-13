@@ -133,6 +133,10 @@ export function initializeLibraryView(
     const query = search.value.trim().toLocaleLowerCase();
     subtitle.textContent = root ? "Your local series - Choose a series and chapter to read." : "Choose a local folder to start reading.";
     heading.textContent = "All series";
+    const firstRun = document.querySelector<HTMLElement>("#library-first-run")!;
+    const emptyLibrary = Boolean(root && result && result.series.length === 0);
+    firstRun.dataset.emptyLibrary = String(emptyLibrary);
+    firstRun.hidden = connection.state === "restoring" || (Boolean(connection.handle) && !emptyLibrary);
     const series = [...(result?.series ?? [])];
     const total = series.length;
     series.sort((a, b) => sort.value === "chapters"
